@@ -62,6 +62,9 @@ MAX_PRECURSORDIST_PPM = 50.
 # maximum proportion of precursor delta-masses that can be 0, otherwise we give up
 MAX_PROPORTION_PRECURSORDELTAS_0 = 0.5
 
+# minimum peaks required to try to fit a mixed distribution
+MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT = 200
+
 # empirically-derived values for transforming Gaussian error distributions into predictions
 DEFAULT_FRAG_SIGMA_MULTIPLIER = 4.763766
 DEFAULT_PRECURSOR_SIGMA_MULTIPLIER = 11.130897
@@ -235,6 +238,16 @@ class ErrorCalculator(object):
             precursor_distances_th.append(diff_th)
             precursor_distances_ppm.append(diff_th * 1000000 / mz1)
 
+        # check for conditions that would cause us to bomb out
+        if len(precursor_distances_th) < MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
+            raise ValueError("Need >= %d peak pairs to fit mixed distribution. Got only %d" %
+                             (MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(precursor_distances_th)))
+        proportion_precursor_mzs_zero = float(n_zero_precursor_deltas) / len(self.paired_precursor_mzs)
+        logger.debug("proportion zero: %f" % proportion_precursor_mzs_zero)
+        if proportion_precursor_mzs_zero > MAX_PROPORTION_PRECURSORDELTAS_0:
+            raise ValueError("Too high a proportion of precursor mass differences (%f) are exactly 0. Some processing has been done on this run that param-medic can't handle. You should investigate what that processing might be." %
+                             proportion_precursor_mzs_zero)
+
         frag_distances_th = []
         frag_distances_ppm = []
         for fragpeak1, fragpeak2 in self.paired_fragment_peaks:
@@ -264,12 +277,6 @@ class ErrorCalculator(object):
         precursor_sigma_ppm = math.sqrt(math.pow(precursor_sigma_ppm_2measures, 2))
         frag_sigma_ppm = math.sqrt(math.pow(frag_sigma_ppm_2measures, 2))
         frag_sigma_th = math.sqrt(math.pow(frag_sigma_th_2measures, 2))
-
-        proportion_precursor_mzs_zero = float(n_zero_precursor_deltas) / len(self.paired_precursor_mzs)
-        logger.debug("proportion zero: %f" % proportion_precursor_mzs_zero)
-        if proportion_precursor_mzs_zero > MAX_PROPORTION_PRECURSORDELTAS_0:
-            raise ValueError("Too high a proportion of precursor mass differences (%f) are exactly 0. Some processing has been done on this run that param-medic can't handle. You should investigate what that processing might be." %
-                  proportion_precursor_mzs_zero)
 
         # generate predictions by multiplying by empirically-derived values
         precursor_prediction_ppm = self.precursor_sigma_multiplier * precursor_sigma_ppm
