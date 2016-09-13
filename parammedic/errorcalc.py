@@ -8,6 +8,7 @@ import numpy as np
 from parammedic import mixturemodel
 import math
 from scipy.optimize import curve_fit
+from mixturemodel import GeneralMixtureModel, NormalDistribution, UniformDistribution
 
 __author__ = "Damon May"
 __copyright__ = "Copyright (c) 2016 Damon May"
