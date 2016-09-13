@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 """
-Infer optimal parameter settings from an .mzML or .ms2 file
+Analyze pairs of closely-eluting spectra with similar precursor and fragments,
+infer precursor and fragment error, and transform those values into values usable
+as tolerance parameters by search engines.
 """
 
 import argparse
