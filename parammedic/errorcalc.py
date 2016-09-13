@@ -20,6 +20,7 @@ import logging
 import numpy as np
 import math
 from mixturemodel import GeneralMixtureModel, NormalDistribution, UniformDistribution
+import random
 
 __author__ = "Damon May"
 __copyright__ = "Copyright (c) 2016 Damon May"
@@ -64,6 +65,8 @@ MAX_PROPORTION_PRECURSORDELTAS_0 = 0.5
 
 # minimum peaks required to try to fit a mixed distribution
 MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT = 200
+# maximum peaks to use to fit a mixed distribution
+MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT = 100000
 
 # empirically-derived values for transforming Gaussian error distributions into predictions
 DEFAULT_FRAG_SIGMA_MULTIPLIER = 4.763766
@@ -134,6 +137,14 @@ class ErrorCalculator(object):
 
     def calc_bin_startmz_fragment(self, bin_idx):
         return self.lowest_fragmentbin_startmz + bin_idx * self.averagine_peak_separation
+
+    def clear_all_bins(self):
+        """
+        Clear all the bins of their most-recent spectra. This is done in order to handle multiple
+        files without making pairs between files
+        :return:
+        """
+        self.binidx_currentspectrum_map = {}
 
     def process_spectrum(self, spectrum):
         """
@@ -231,6 +242,10 @@ class ErrorCalculator(object):
         precursor_distances_th = []
         precursor_distances_ppm = []
         n_zero_precursor_deltas = 0
+        if len(self.paired_precursor_mzs) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
+            logger.debug("Using %d of %d peak pairs for precursor..." %
+                         (MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(self.paired_precursor_mzs)))
+            self.paired_precursor_mzs = random.sample(self.paired_precursor_mzs, MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT)
         for mz1, mz2 in self.paired_precursor_mzs:
             diff_th = mz1 - mz2
             if diff_th == 0.0:
@@ -245,11 +260,17 @@ class ErrorCalculator(object):
         proportion_precursor_mzs_zero = float(n_zero_precursor_deltas) / len(self.paired_precursor_mzs)
         logger.debug("proportion zero: %f" % proportion_precursor_mzs_zero)
         if proportion_precursor_mzs_zero > MAX_PROPORTION_PRECURSORDELTAS_0:
-            raise ValueError("Too high a proportion of precursor mass differences (%f) are exactly 0. Some processing has been done on this run that param-medic can't handle. You should investigate what that processing might be." %
+            raise ValueError("Too high a proportion of precursor mass differences (%f) are exactly 0. " \
+                             "Some processing has been done on this run that param-medic can't handle. " \
+                             "You should investigate what that processing might be." %
                              proportion_precursor_mzs_zero)
 
         frag_distances_th = []
         frag_distances_ppm = []
+        if len(self.paired_fragment_peaks) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
+            logger.debug("Using %d of %d peak pairs for fragment..." %
+                         (MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(self.paired_fragment_peaks)))
+            self.paired_fragment_peaks = random.sample(self.paired_fragment_peaks, MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT)
         for fragpeak1, fragpeak2 in self.paired_fragment_peaks:
             diff_th = fragpeak1[0] - fragpeak2[0]
             frag_distances_th.append(diff_th)
@@ -306,7 +327,6 @@ def estimate_mu_sigma(data, min_sigma):
     frag_deltamzs_ndarray.shape = (len(data), 1)
     # fit the mixture model with EM
     improvement = mixture_model.fit(frag_deltamzs_ndarray)
-    logger.debug("model:\n%s" % mixture_model)
     logger.debug("model improvement: %f" % improvement)
     mu_fit = mixture_model.distributions[0].parameters[0]
     sigma_fit = mixture_model.distributions[0].parameters[1]

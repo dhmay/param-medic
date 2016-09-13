@@ -30,8 +30,9 @@ def declare_gather_args():
 
     # declare args
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('infile', type=argparse.FileType('r'),
-                        help='input .mzML or .ms2 file')
+    parser.add_argument('infiles', type=argparse.FileType('r'), nargs='+',
+                        help='input .mzML or .ms2 file(s). If multiple files are specified, " \
+                        "they will be processed together')
     parser.add_argument('--debug', action="store_true", help='Enable debug logging')
     parser.add_argument('--version', action='version', version='%(prog)s {version}'.format(version=__version__))
 
@@ -57,8 +58,12 @@ def main():
 
     error_calculator = errorcalc.ErrorCalculator()
 
-    for spectrum in generate_spectra(args.infile):
-        error_calculator.process_spectrum(spectrum)
+    for infile in args.infiles:
+        logger.debug("Processing input file %s..." % infile.name)
+        for spectrum in generate_spectra(infile):
+            error_calculator.process_spectrum(spectrum)
+        # clear the bins so we don't end up using pairs across files
+        error_calculator.clear_all_bins()
 
     # calculate mass error distributions
     (precursor_sigma_ppm, frag_sigma_ppm, frag_sigma_th,
