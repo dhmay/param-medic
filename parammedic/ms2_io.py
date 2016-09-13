@@ -68,8 +68,6 @@ def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=Fals
 
     n_yielded = 0
 
-    in_preamble = True
-
     # differences in m/z between that on the s-line and that calculated from the z-line
     zline_sline_precursor_deltas = []
     zline_sline_masses = []
@@ -98,10 +96,10 @@ def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=Fals
                 if charge is not None and charge > 0:
                     logger.debug("0 charge!")
                     yield errorcalc.MS2Spectrum(scan_number,
-                                              retention_time,
-                                              fragment_mzs,
-                                              fragment_intensities,
-                                              precursor_mz, charge)
+                                                retention_time,
+                                                fragment_mzs,
+                                                fragment_intensities,
+                                                precursor_mz, charge)
                     n_yielded += 1
                     logger.debug("Yielded #%d" % n_yielded)
                 # zero out everything not on this line so that we know if we got it for the next scan
@@ -132,17 +130,9 @@ def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=Fals
             if should_calc_zs_mz_diffs:
                 if abs(zline_precursor_mz - precursor_mz) > 0.5:
                     pass
-                    #print("scan %s, z=%d, S* %f Z* %f, Z_mz* %f" % (scan_number, charge, precursor_mz, z_precursor_mplush, zline_precursor_mz))
-
-                    if (abs((zline_precursor_mz - precursor_mz) * charge)) > 0.5:
-                        print("%d    %f    %f" % (scan_number, (zline_precursor_mz - precursor_mz) * charge,
-                                            ((zline_precursor_mz - precursor_mz) * charge) % HYDROGEN_MASS))
                 diff_mod = abs((zline_precursor_mz - precursor_mz) * charge) % 1.000495
                 while diff_mod > 1.000495 / 2:
                     diff_mod -= 1.000495
-                if abs(diff_mod) > 0.2:
-                    print("HUH?! %f" % diff_mod)
-                #zline_sline_precursor_deltas.append(diff_mod)
                 zline_sline_precursor_deltas.append((zline_precursor_mz - precursor_mz) * charge)
                 zline_sline_masses.append(precursor_mz * charge)
             if precursor_from_zline:
@@ -159,10 +149,10 @@ def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=Fals
     if scan_number and (retention_time or not require_rt) and fragment_mzs and \
             fragment_intensities and precursor_mz and charge:
         yield errorcalc.MS2Spectrum(scan_number,
-                                  retention_time,
-                                  fragment_mzs,
-                                  fragment_intensities,
-                                  precursor_mz, charge)
+                                    retention_time,
+                                    fragment_mzs,
+                                    fragment_intensities,
+                                    precursor_mz, charge)
         n_yielded += 1
     else:
         logger.debug("Tried to write scan with not all values collected")

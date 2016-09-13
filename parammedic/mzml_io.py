@@ -15,7 +15,8 @@ __license__ = ""
 __version__ = ""
 
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
+
 
 def retrieve_scans(mzml_file, scan_numbers):
     """
@@ -51,7 +52,7 @@ def read_scans(mzml_file, ms_levels=(1, 2)):
 
 def read_scan(scan):
     """
-
+    Read a single scan into our representation
     :param scan:
     :return:
     """
@@ -63,18 +64,18 @@ def read_scan(scan):
     retention_time = scan['scanList']['scan'][0]['scan start time']
     if ms_level == 1:
         return errorcalc.MSSpectrum(scan_number, retention_time,
-                                  mz_array,
-                                  intensity_array)
+                                    mz_array,
+                                    intensity_array)
     elif ms_level == 2:
         precursor_selected_ion_map = scan['precursorList']['precursor'][0]['selectedIonList']['selectedIon'][0]
         precursor_mz = precursor_selected_ion_map['selected ion m/z']
         charge = precursor_selected_ion_map['charge state']
         return errorcalc.MS2Spectrum(scan_number, retention_time,
-                                   mz_array,
-                                   intensity_array,
-                                   precursor_mz, charge)
+                                     mz_array,
+                                     intensity_array,
+                                     precursor_mz, charge)
     else:
-        raise ValueError("Unhandleable scan level %d" % ms_level)
+        logger.debug("Unhandleable scan level %d" % ms_level)
 
 
 # example pyteomics.mzml ms2 scan object:
