@@ -14,14 +14,8 @@ __copyright__ = "Copyright (c) 2016 Damon May"
 __license__ = ""
 __version__ = ""
 
-PEPXML_NS_URL = "http://regis-web.systemsbiology.net/pepXML"
-PEPXML_NS = "{" + PEPXML_NS_URL + "}"
-
-# minimum ratio, for pegging 0-ratio values
-MIN_RATIO = 0.001
 
 log = logging.getLogger(__name__)
-
 
 def retrieve_scans(mzml_file, scan_numbers):
     """

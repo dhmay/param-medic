@@ -2,8 +2,19 @@
 #cython: cdivision=True
 
 """
-Mixture-model code reused with permission from Jacob Schreiber's Pomegranate:
+Code for modeling a mixed Gaussian-Uniform distribution.
+Code adapted with permission from Jacob Schreiber's Pomegranate:
 https://github.com/jmschrei/pomegranate
+
+Pomegranate is far more flexible than what I need for this application
+(mixed Gaussian-uniform distribution), and the structure of this code
+reflects that -- it's a bit heavyweight for this use case, but that shouldn't
+affect performance.
+
+Only notable change from Jacob's code: I had trouble getting nogil functions to work
+on my Mac. To avoid cross-platform compatibility issues, I made everything keep gil.
+Might be a small performance hit where multiple threads are available. Emprically,
+seems to perform fine.
 """
 
 import logging
@@ -16,18 +27,15 @@ from libc.string cimport memset
 from libc.stdlib cimport calloc
 from libc.stdlib cimport free
 from libc.string cimport memcpy
-import sys
-
-__author__ = "Damon May"
-__copyright__ = "Copyright (c) 2016 Damon May"
-__license__ = ""
-__version__ = ""
 
 DEF NEGINF = float("-inf")
 DEF INF = float("inf")
 DEF SQRT_2_PI = 2.50662827463
 
 logger = logging.getLogger(__name__)
+
+
+## Utility methods
 
 cpdef numpy.ndarray _check_input(X, dict keymap):
     """Check the input to make sure that it is a properly formatted array."""
@@ -51,24 +59,23 @@ cpdef numpy.ndarray _check_input(X, dict keymap):
 
     return X_ndarray
 
-# Useful speed optimized functions
 cdef double _log(double x) nogil:
-    '''
+    """
     A wrapper for the c log function, by returning negative infinity if the
     input is 0.
-    '''
+    """
 
     return clog(x) if x > 0 else NEGINF
 
 cdef double pair_lse(double x, double y) nogil:
-    '''
+    """
     Perform log-sum-exp on a pair of numbers in log space..  This is calculated
     as z = log( e**x + e**y ). However, this causes underflow sometimes
     when x or y are too negative. A simplification of this is thus
     z = x + log( e**(y-x) + 1 ), where x is the greater number. If either of
     the inputs are infinity, return infinity, and if either of the inputs
     are negative infinity, then simply return the other input.
-    '''
+    """
 
     if x == INF or y == INF:
         return INF
@@ -87,7 +94,6 @@ def weight_set(items, weights):
     array to the same. If no weights are passed in, then return a numpy array
     with uniform weights.
     """
-
     items = numpy.array(items, dtype=numpy.float64)
     if weights is None:
         # Weight everything 1 if no weights specified
@@ -745,7 +751,13 @@ cdef class Kmeans(Model):
         memset(self.summary_sizes, 0, self.k * sizeof(int))
         memset(self.summary_weights, 0, self.k * self.d * sizeof(int))
 
+
 cdef class GeneralMixtureModel(Model):
+    """
+    General mixture model. This is overkill for my two-distribution use case, but the extra
+    complexity doesn't introduce any significant overhead.
+    """
+
     cdef public numpy.ndarray distributions
     cdef object distribution_callable
     cdef public numpy.ndarray weights
