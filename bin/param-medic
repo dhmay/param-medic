@@ -30,9 +30,9 @@ def declare_gather_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('infile', type=argparse.FileType('r'),
                         help='input .mzML or .ms2 file')
-
     parser.add_argument('--debug', action="store_true", help='Enable debug logging')
     parser.add_argument('--version', action='version', version='%(prog)s {version}'.format(version=__version__))
+
     return parser.parse_args()
 
 
