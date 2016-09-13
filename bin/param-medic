@@ -37,6 +37,10 @@ def declare_gather_args():
 
 
 def main():
+    """
+    Handle arguments, create an ErrorCalculator, process all the spectra, and infer parameters.
+    :return:
+    """
     args = declare_gather_args()
     # logging
     logging.basicConfig(level=logging.INFO,
@@ -54,21 +58,20 @@ def main():
     for spectrum in generate_spectra(args.infile):
         error_calculator.process_spectrum(spectrum)
 
+    # calculate mass error distributions
     (precursor_sigma_ppm, frag_sigma_ppm, frag_sigma_th,
      precursor_prediction_ppm, fragment_prediction_ppm, fragment_prediction_th) = \
         error_calculator.calc_masserror_dist()
 
-    print('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
-    print('fragment standard deviation (Th): %f' % frag_sigma_th)
-    print('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
-    print()
+    logger.debug("End time: %s. Elapsed time: %s" % (datetime.now(), datetime.now() - script_start_time))
+    logger.debug('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
+    logger.debug('fragment standard deviation (Th): %f' % frag_sigma_th)
+    logger.debug('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
+    logger.debug('')
 
     print("Precursor error estimate (ppm): %.2f" % precursor_prediction_ppm)
     print("Fragment bin size estimate (Th): %.4f" % fragment_prediction_th)
     print("Fragment bin size estimate (ppm): %.2f" % fragment_prediction_ppm)
-
-    logger.debug("End time: %s. Elapsed time: %s" % (datetime.now(), datetime.now() - script_start_time))
-    print("Done.")
 
 
 def generate_spectra(spectra_file):
