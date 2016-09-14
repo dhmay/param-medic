@@ -3,7 +3,7 @@ Param-Medic breathes new life into MS/MS database searches by optimizing search 
 
 ## Usage:
 
-param-medic [--debug] <spectra file>+
+param-medic [--debug] \<spectra file\>+
 
 ## Description:
 
@@ -20,7 +20,7 @@ Param-Medic may fail if two few paired spectra are discovered, or if precursor m
 
 ## Input
 
-* <spectra file>+: The path to one or more files from which to parse fragmentation spectra, in .mzML or .ms2 format.  
+* \<spectra file\>+: The path to one or more files from which to parse fragmentation spectra, in .mzML or .ms2 format.  
 
 ## Output
 
