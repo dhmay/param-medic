@@ -17,6 +17,16 @@ a factor determined empirically on 8 training datasets.
 
 Multiple files are handled simply: by blanking out the map that keeps track of scans
 in each bin. That way, no pairs are made between files.
+
+A word on efficiency: aside from the mixture-model stuff in mixturemodel.pyx (which I
+got from Josh Schreiber -- he deserves all that credit!) none of this code is
+particularly efficient. It's written for clarity and simplicity. I don't think the
+efficiency matters so much for this use case -- the code runs in under a minute on
+the biggest files I throw at it; most of that time is unavoidable I/O, and most of
+the rest is Josh's already-nicely-efficient EM implementation.
+
+If efficiency in this part of the code turns out to be a bigger issue, for someone,
+I'll consider a rewrite.
 """
 
 import logging
