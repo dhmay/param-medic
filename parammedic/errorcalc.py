@@ -14,6 +14,9 @@ When all scans are parsed, a mixed Gaussian-Uniform distribution is fit to the p
 error distribution and the fragment error distribution. Standard deviations of these
 distributions are transformed into algorithm parameter settings by multiplying by
 a factor determined empirically on 8 training datasets.
+
+Multiple files are handled simply: by blanking out the map that keeps track of scans
+in each bin. That way, no pairs are made between files.
 """
 
 import logging

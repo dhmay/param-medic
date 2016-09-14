@@ -3,6 +3,8 @@
 Analyze pairs of closely-eluting spectra with similar precursor and fragments,
 infer precursor and fragment error, and transform those values into values usable
 as tolerance parameters by search engines.
+
+If multiple files are specified, they will be processed together.
 """
 
 import argparse
