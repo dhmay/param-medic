@@ -301,16 +301,20 @@ class ErrorCalculator(object):
         logger.debug('frag_mu_th_2measures %f' % frag_mu_th_2measures)
         logger.debug('frag_sigma_th_2measures : %f' % frag_sigma_th_2measures)
 
-        # what we have now measured, in the fit Gaussians, is the sum of two errors.
-        # "the sum of two independent normally distributed random variables is normal,
-        # with its mean being the sum of the two means, and its variance being the sum of the two variances
-        # (i.e., the square of the standard deviation is the sum of the squares of the standard deviations)."
-        # https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables
-        # Practically speaking, this distinction doesn't matter one bit. I'm just doing it for interpretability
-        # of the sigma value
-        precursor_sigma_ppm = math.sqrt(math.pow(precursor_sigma_ppm_2measures, 2))
-        frag_sigma_ppm = math.sqrt(math.pow(frag_sigma_ppm_2measures, 2))
-        frag_sigma_th = math.sqrt(math.pow(frag_sigma_th_2measures, 2))
+        # what we have now measured, in the fit Gaussians, is the distribution of the difference
+        # of two values drawn from the distribution of error values.
+        # Assuming the error values are normally distributed with mean 0 and variance s^2, the
+        # differences are normally distributed with mean 0 and variance 2*s^2:
+        # http://mathworld.wolfram.com/NormalDifferenceDistribution.html
+        # i.e., differences are normally distributed with mean=0 and sd=sqrt(2)*s
+        # hence, if differences have sd=diff_sigma, then errors have sd diff_sigma/sqrt(2)
+        #
+        # incidentally, this transformation doesn't matter one bit, practically, since we're
+        # inferring a multiplier for this value empirically. But it lets us report something
+        # with an easily-interpretable meaning as an intermediate value
+        precursor_sigma_ppm = precursor_sigma_ppm_2measures/math.sqrt(2)
+        frag_sigma_ppm = frag_sigma_ppm_2measures/math.sqrt(2)
+        frag_sigma_th = frag_sigma_th_2measures/math.sqrt(2)
 
         # generate predictions by multiplying by empirically-derived values
         precursor_prediction_ppm = self.precursor_sigma_multiplier * precursor_sigma_ppm
