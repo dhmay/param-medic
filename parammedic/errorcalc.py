@@ -82,8 +82,10 @@ MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT = 200
 MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT = 100000
 
 # empirically-derived values for transforming Gaussian error distributions into predictions
-DEFAULT_FRAG_SIGMA_MULTIPLIER = 4.763766
-DEFAULT_PRECURSOR_SIGMA_MULTIPLIER = 11.130897
+#DEFAULT_FRAG_SIGMA_MULTIPLIER = 4.763766
+#DEFAULT_PRECURSOR_SIGMA_MULTIPLIER = 11.130897
+DEFAULT_FRAG_SIGMA_MULTIPLIER = 0.003543
+DEFAULT_PRECURSOR_SIGMA_MULTIPLIER = 15.720249
 
 # minimum allowed values for sigma of the estimated normal
 MIN_SIGMA_PPM = 0.01
@@ -252,7 +254,6 @@ class ErrorCalculator(object):
         logger.debug("Precursor pairs: %d" % len(self.paired_precursor_mzs))
         logger.debug("Fragment pairs: %d" % len(self.paired_fragment_peaks))
 
-        precursor_distances_th = []
         precursor_distances_ppm = []
         n_zero_precursor_deltas = 0
         if len(self.paired_precursor_mzs) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
@@ -263,13 +264,12 @@ class ErrorCalculator(object):
             diff_th = mz1 - mz2
             if diff_th == 0.0:
                 n_zero_precursor_deltas += 1
-            precursor_distances_th.append(diff_th)
             precursor_distances_ppm.append(diff_th * 1000000 / mz1)
 
         # check for conditions that would cause us to bomb out
-        if len(precursor_distances_th) < MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
+        if len(precursor_distances_ppm) < MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
             raise ValueError("Need >= %d peak pairs to fit mixed distribution. Got only %d" %
-                             (MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(precursor_distances_th)))
+                             (MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(precursor_distances_ppm)))
         proportion_precursor_mzs_zero = float(n_zero_precursor_deltas) / len(self.paired_precursor_mzs)
         logger.debug("proportion zero: %f" % proportion_precursor_mzs_zero)
         if proportion_precursor_mzs_zero > MAX_PROPORTION_PRECURSORDELTAS_0:
@@ -278,7 +278,6 @@ class ErrorCalculator(object):
                              "You should investigate what that processing might be." %
                              proportion_precursor_mzs_zero)
 
-        frag_distances_th = []
         frag_distances_ppm = []
         if len(self.paired_fragment_peaks) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
             logger.debug("Using %d of %d peak pairs for fragment..." %
@@ -286,20 +285,16 @@ class ErrorCalculator(object):
             self.paired_fragment_peaks = random.sample(self.paired_fragment_peaks, MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT)
         for fragpeak1, fragpeak2 in self.paired_fragment_peaks:
             diff_th = fragpeak1[0] - fragpeak2[0]
-            frag_distances_th.append(diff_th)
             frag_distances_ppm.append(diff_th * 1000000 / fragpeak1[0])
 
         # estimate the parameters of the component distributions for each of the mixed distributions.
         precursor_mu_ppm_2measures, precursor_sigma_ppm_2measures = estimate_mu_sigma(precursor_distances_ppm, MIN_SIGMA_PPM)
         frag_mu_ppm_2measures, frag_sigma_ppm_2measures = estimate_mu_sigma(frag_distances_ppm, MIN_SIGMA_PPM)
-        frag_mu_th_2measures, frag_sigma_th_2measures = estimate_mu_sigma(frag_distances_th, MIN_SIGMA_TH)
 
         logger.debug('precursor_mu_ppm_2measures: %f' % precursor_mu_ppm_2measures)
         logger.debug('precursor_sigma_ppm_2measures: %f' % precursor_sigma_ppm_2measures)
         logger.debug('frag_mu_ppm_2measures: %f' % frag_mu_ppm_2measures)
         logger.debug('frag_sigma_ppm_2measures: %f' % frag_sigma_ppm_2measures)
-        logger.debug('frag_mu_th_2measures %f' % frag_mu_th_2measures)
-        logger.debug('frag_sigma_th_2measures : %f' % frag_sigma_th_2measures)
 
         # what we have now measured, in the fit Gaussians, is the distribution of the difference
         # of two values drawn from the distribution of error values.
@@ -314,15 +309,13 @@ class ErrorCalculator(object):
         # with an easily-interpretable meaning as an intermediate value
         precursor_sigma_ppm = precursor_sigma_ppm_2measures/math.sqrt(2)
         frag_sigma_ppm = frag_sigma_ppm_2measures/math.sqrt(2)
-        frag_sigma_th = frag_sigma_th_2measures/math.sqrt(2)
 
         # generate predictions by multiplying by empirically-derived values
         precursor_prediction_ppm = self.precursor_sigma_multiplier * precursor_sigma_ppm
-        fragment_prediction_th = self.frag_sigma_multiplier * frag_sigma_th
-        fragment_prediction_ppm = self.frag_sigma_multiplier * frag_sigma_ppm
+        fragment_prediction_th = self.frag_sigma_multiplier * frag_sigma_ppm
 
-        return (precursor_sigma_ppm, frag_sigma_ppm, frag_sigma_th,
-                precursor_prediction_ppm, fragment_prediction_ppm, fragment_prediction_th)
+        return (precursor_sigma_ppm, frag_sigma_ppm,
+                precursor_prediction_ppm, fragment_prediction_th)
 
 
 def estimate_mu_sigma(data, min_sigma):
