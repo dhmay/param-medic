@@ -35,10 +35,48 @@ def declare_gather_args():
     parser.add_argument('infiles', type=argparse.FileType('r'), nargs='+',
                         help='input .mzML or .ms2 file(s). If multiple files are specified, " \
                         "they will be processed together')
+
+    parser.add_argument('--min-precursor-mz', type=float_greaterthanequalto0_type, help='')
+    parser.add_argument('--max-precursor-mz', type=float_greaterthanequalto0_type, help='')
+    parser.add_argument('--max-precursor-deltappm', type=float_greaterthanequalto0_type, help='')
+    parser.add_argument('--min-frag-mz', type=float_greaterthanequalto0_type, help='')
+    parser.add_argument('--max-frag-mz', type=float_greaterthanequalto0_type, help='')
+    parser.add_argument('--charge', type=int_greaterthanequalto1_type, help='')
+    parser.add_argument('--min-scan-fragpeaks', type=int_greaterthanequalto1_type, help='')
+    parser.add_argument('--topn-fragpeaks', type=int_greaterthanequalto1_type, help='')
+    parser.add_argument('--min-common-fragpeaks', type=int_greaterthanequalto1_type, help='')
+    parser.add_argument('--pair-topn-fragpeaks', type=int_greaterthanequalto1_type, help='')
+    parser.add_argument('--max-scan-separation', type=int_greaterthanequalto1_type, help='')
+    parser.add_argument('--min-peakpairs', type=int_greaterthanequalto1_type, help='')
+
     parser.add_argument('--debug', action="store_true", help='Enable debug logging')
     parser.add_argument('--version', action='version', version='%(prog)s {version}'.format(version=__version__))
 
     return parser.parse_args()
+
+
+def int_greaterthanequalto1_type(x):
+    """
+    parameter type that is an integer >= 1
+    :param x:
+    :return:
+    """
+    x = int(x)
+    if x < 1:
+        raise argparse.ArgumentTypeError("Minimum value is 1")
+    return x
+
+
+def float_greaterthanequalto0_type(x):
+    """
+    parameter type that is a float >= 0
+    :param x:
+    :return:
+    """
+    x = float(x)
+    if x < 0:
+        raise argparse.ArgumentTypeError("Minimum value is 0.0")
+    return x
 
 
 def main():
@@ -47,6 +85,11 @@ def main():
     :return:
     """
     args = declare_gather_args()
+    if args.max_precursor_mz <= args.min_precursor_mz:
+        quit("max-precursor-mz must be > min-precursor-mz")
+    if args.max_frag_mz <= args.min_frag_mz:
+        quit("max-frag-mz must be > min-frag-mz")
+
     # logging
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s: %(message)s")
@@ -58,7 +101,18 @@ def main():
     script_start_time = datetime.now()
     logger.debug("Start time: %s" % script_start_time)
 
-    error_calculator = errorcalc.ErrorCalculator()
+    error_calculator = errorcalc.ErrorCalculator(min_precursor_mz=args.min_precursor_mz,
+                                                 max_precursor_mz=args.max_precursor_mz,
+                                                 min_frag_mz=args.min_frag_mz,
+                                                 max_frag_mz=args.max_frag_mz,
+                                                 charge=args.charge,
+                                                 min_scan_fragpeaks=args.min_scan_fragpeaks,
+                                                 topn_fragpeaks=args.topn_fragpeaks,
+                                                 min_common_fragpeaks=args.min_common_fragpeaks,
+                                                 pair_topn_fragpeaks=args.pair_topn_fragpeaks,
+                                                 max_scan_separation=args.max_scan_separation,
+                                                 max_precursor_deltappm=args.max_precursor_deltappm,
+                                                 min_peakpairs=args.min_peakpairs)
 
     for infile in args.infiles:
         logger.debug("Processing input file %s..." % infile.name)

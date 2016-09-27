@@ -42,50 +42,51 @@ __version__ = ""
 
 logger = logging.getLogger(__name__)
 
-# Separation between Averagine peaks. This is used for binning spectra
-AVERAGINE_PEAK_SEPARATION = 1.000495
+# default values for parameters
 
 # minimum and maximum values for precursor and fragment m/z to consider
-MIN_MZ_FOR_BIN_PRECURSOR = 400.
-MAX_MZ_FOR_BIN_PRECURSOR = 1800.
-MIN_MZ_FOR_BIN_FRAGMENT = 150.
-MAX_MZ_FOR_BIN_FRAGMENT = 1800.
+DEFAULT_MIN_MZ_FOR_BIN_PRECURSOR = 400.
+DEFAULT_MAX_MZ_FOR_BIN_PRECURSOR = 1800.
+DEFAULT_MIN_MZ_FOR_BIN_FRAGMENT = 150.
+DEFAULT_MAX_MZ_FOR_BIN_FRAGMENT = 1800.
 
 # charge of scan to consider. T
-CHARGE = 2
-
+DEFAULT_CHARGE = 2
 # minimum number of MS2 fragments that a scan must have to be considered
-MIN_SCAN_MS2PEAKS = 40
+DEFAULT_MIN_SCAN_MS2PEAKS = 40
 # Number of most-intense fragment peaks to store per scan
-TOPN_FRAGPEAKS = 30
+DEFAULT_TOPN_FRAGPEAKS = 30
 # Minimum number of fragments two scans must have in common (at a gross level) to
 # be considered likely to represent the same peptide
-MIN_FRAGPEAKS_INCOMMON = 20
+DEFAULT_MIN_FRAGPEAKS_INCOMMON = 20
 # Number of fragment peak pairs to use for error estimation
-TOPN_FRAGPEAKS_FOR_ERROR_EST = 5
+DEFAULT_TOPN_FRAGPEAKS_FOR_ERROR_EST = 5
 
 # maximum scans that can separate two scans for them to be compared.
 # This is something of a hack -- ideally, the value would vary based
 # on the gradient, or really we'd use retention time, but again the right
 # value would depend on the gradient
-MAX_SCANS_BETWEEN_COMPARESCANS = 1000
+DEFAULT_MAX_SCANS_BETWEEN_COMPARESCANS = 1000
 
 # maximum PPM difference between two scans for them to be compared
-MAX_PRECURSORDIST_PPM = 50.
-
-# maximum proportion of precursor delta-masses that can be 0, otherwise we give up
-MAX_PROPORTION_PRECURSORDELTAS_0 = 0.5
+DEFAULT_MAX_PRECURSORDIST_PPM = 50.
 
 # minimum peaks required to try to fit a mixed distribution
-MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT = 200
+DEFAULT_MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT = 200
+
+
+# constants
+
+# Separation between Averagine peaks. This is used for binning spectra
+AVERAGINE_PEAK_SEPARATION = 1.000507
+# maximum proportion of precursor delta-masses that can be 0, otherwise we give up
+MAX_PROPORTION_PRECURSORDELTAS_0 = 0.5
 # maximum peaks to use to fit a mixed distribution
 MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT = 100000
 
 # empirically-derived values for transforming Gaussian error distributions into predictions
-#DEFAULT_FRAG_SIGMA_MULTIPLIER = 4.763766
-#DEFAULT_PRECURSOR_SIGMA_MULTIPLIER = 11.130897
-DEFAULT_FRAG_SIGMA_MULTIPLIER = 0.003543
-DEFAULT_PRECURSOR_SIGMA_MULTIPLIER = 15.720249
+FRAG_SIGMA_MULTIPLIER = 0.003543
+PRECURSOR_SIGMA_MULTIPLIER = 15.720249
 
 # minimum allowed values for sigma of the estimated normal
 MIN_SIGMA_PPM = 0.01
@@ -97,30 +98,65 @@ class ErrorCalculator(object):
     Class that accumulates pairs of precursors and fragments and uses them to estimate mass error.
     """
     def __init__(self,
-                 precursor_sigma_multiplier=DEFAULT_PRECURSOR_SIGMA_MULTIPLIER,
-                 frag_sigma_multiplier=DEFAULT_FRAG_SIGMA_MULTIPLIER,
-                 averagine_peak_separation=AVERAGINE_PEAK_SEPARATION):
+                 min_precursor_mz=DEFAULT_MIN_MZ_FOR_BIN_PRECURSOR,
+                 max_precursor_mz=DEFAULT_MAX_MZ_FOR_BIN_PRECURSOR,
+                 min_frag_mz=DEFAULT_MIN_MZ_FOR_BIN_FRAGMENT,
+                 max_frag_mz=DEFAULT_MAX_MZ_FOR_BIN_FRAGMENT,
+                 charge=DEFAULT_CHARGE,
+                 min_scan_fragpeaks=DEFAULT_MIN_SCAN_MS2PEAKS,
+                 topn_fragpeaks=DEFAULT_TOPN_FRAGPEAKS,
+                 min_common_fragpeaks=DEFAULT_MIN_FRAGPEAKS_INCOMMON,
+                 pair_topn_fragpeaks=DEFAULT_TOPN_FRAGPEAKS_FOR_ERROR_EST,
+                 max_scan_separation=DEFAULT_MAX_SCANS_BETWEEN_COMPARESCANS,
+                 max_precursor_deltappm=DEFAULT_MAX_PRECURSORDIST_PPM,
+                 min_peakpairs=DEFAULT_MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT
+                 ):
         """
 
-        :param precursor_sigma_multiplier: multiplier to transform standord error value into algorithm parameters
-        :param frag_sigma_multiplier: multiplier to transform standord error value into algorithm parameters
-        :param averagine_peak_separation: separation between averagine peaks
+        :param min_precursor_mz:
+        :param max_precursor_mz:
+        :param min_frag_mz:
+        :param max_frag_mz:
+        :param charge:
+        :param min_scan_fragpeaks:
+        :param topn_fragpeaks:
+        :param min_common_fragpeaks:
+        :param pair_topn_fragpeaks:
+        :param max_scan_separation:
+        :param max_precursor_deltappm:
+        :param min_peakpairs:
         """
+
+        # set variables based on parameters
+        self.min_precursor_mz = min_precursor_mz
+        self.max_precursor_mz = max_precursor_mz
+        self.min_frag_mz = min_frag_mz
+        self.max_frag_mz = max_frag_mz
+        self.charge = charge
+        self.min_scan_fragpeaks = min_scan_fragpeaks
+        self.topn_fragpeaks = topn_fragpeaks
+        self.min_common_fragpeaks = min_common_fragpeaks
+        self.pair_topn_fragpeaks = pair_topn_fragpeaks
+        self.max_scan_separation = max_scan_separation
+        self.max_precursor_deltappm = max_precursor_deltappm
+        self.min_peakpairs = min_peakpairs
+
+
         # count the spectra that go by
         self.n_total_spectra = 0
         self.n_passing_spectra = 0
 
         # multipliers to transform standord error values into algorithm parameters
-        self.precursor_sigma_multiplier = precursor_sigma_multiplier
-        self.frag_sigma_multiplier = frag_sigma_multiplier
+        self.precursor_sigma_multiplier = PRECURSOR_SIGMA_MULTIPLIER
+        self.frag_sigma_multiplier = FRAG_SIGMA_MULTIPLIER
 
-        self.averagine_peak_separation = averagine_peak_separation
+        self.averagine_peak_separation = AVERAGINE_PEAK_SEPARATION
 
         # define the number and position of bins
-        self.lowest_precursorbin_startmz = MIN_MZ_FOR_BIN_PRECURSOR - (MIN_MZ_FOR_BIN_PRECURSOR % (averagine_peak_separation / CHARGE))
-        self.lowest_fragmentbin_startmz = MIN_MZ_FOR_BIN_FRAGMENT - (MIN_MZ_FOR_BIN_FRAGMENT % averagine_peak_separation)
-        self.n_precursor_bins = self.calc_binidx_for_mz_precursor(MAX_MZ_FOR_BIN_PRECURSOR) + 1
-        self.n_fragment_bins = self.calc_binidx_for_mz_fragment(MAX_MZ_FOR_BIN_FRAGMENT) + 1
+        self.lowest_precursorbin_startmz = self.min_precursor_mz - (self.min_precursor_mz % (self.averagine_peak_separation / self.charge))
+        self.lowest_fragmentbin_startmz = self.min_frag_mz - (self.min_frag_mz % self.averagine_peak_separation)
+        self.n_precursor_bins = self.calc_binidx_for_mz_precursor(self.max_precursor_mz) + 1
+        self.n_fragment_bins = self.calc_binidx_for_mz_fragment(self.max_frag_mz) + 1
 
         # map from bin index to current spectrum. This could also be implemented as a sparse array
         self.binidx_currentspectrum_map = {}
@@ -132,7 +168,7 @@ class ErrorCalculator(object):
     # these utility methods find the right bin for a given mz
 
     def calc_binidx_for_mz_precursor(self, mz):
-        return int(math.floor((mz - self.lowest_precursorbin_startmz) / (self.averagine_peak_separation / CHARGE)))
+        return int(math.floor((mz - self.lowest_precursorbin_startmz) / (self.averagine_peak_separation / self.charge)))
 
     def calc_binidx_for_mz_fragment(self, mz):
         return int(math.floor((mz - self.lowest_fragmentbin_startmz) / self.averagine_peak_separation))
@@ -148,7 +184,7 @@ class ErrorCalculator(object):
     # these utility methods calculate the start mz values of a specified bin
 
     def calc_bin_startmz_precursor(self, bin_idx):
-        return self.lowest_precursorbin_startmz + bin_idx * (self.averagine_peak_separation / CHARGE)
+        return self.lowest_precursorbin_startmz + bin_idx * (self.averagine_peak_separation / self.charge)
 
     def calc_bin_startmz_fragment(self, bin_idx):
         return self.lowest_fragmentbin_startmz + bin_idx * self.averagine_peak_separation
@@ -170,14 +206,14 @@ class ErrorCalculator(object):
         :return:
         """
         self.n_total_spectra += 1
-        if spectrum.charge != CHARGE:
+        if spectrum.charge != self.charge:
             return
-        if len(spectrum.mz_array) < MIN_SCAN_MS2PEAKS:
+        if len(spectrum.mz_array) < self.min_scan_fragpeaks:
             return
-        if MIN_MZ_FOR_BIN_PRECURSOR <= spectrum.precursor_mz <= MAX_MZ_FOR_BIN_PRECURSOR:
+        if self.min_precursor_mz <= spectrum.precursor_mz <= self.max_precursor_mz:
             self.n_passing_spectra += 1
             # pull out the top fragments by intensity
-            topn_frag_idxs_intensity_desc = np.argsort(spectrum.intensity_array)[::-1][0:TOPN_FRAGPEAKS]
+            topn_frag_idxs_intensity_desc = np.argsort(spectrum.intensity_array)[::-1][0:self.topn_fragpeaks]
             topn_frags = [(spectrum.mz_array[i], spectrum.intensity_array[i]) for i in topn_frag_idxs_intensity_desc]
 
             # create a SpectrumObservation object representing this spectrum. This takes up less
@@ -191,15 +227,15 @@ class ErrorCalculator(object):
                 precursor_mz_diff = spectrum.precursor_mz - prev_spec_obs.precursor_mz
                 precursor_mz_diff_ppm = precursor_mz_diff * 1000000 / spectrum.precursor_mz
                 # check precursor
-                if abs(precursor_mz_diff_ppm) < MAX_PRECURSORDIST_PPM:
+                if abs(precursor_mz_diff_ppm) < self.max_precursor_deltappm:
                     # check scan count between the scans
-                    if current_spec_obs.scan_number - prev_spec_obs.scan_number <= MAX_SCANS_BETWEEN_COMPARESCANS:
+                    if current_spec_obs.scan_number - prev_spec_obs.scan_number <= self.max_scan_separation:
                         # count the fragment peaks in common
                         paired_fragments_bybin = self.pair_fragments_bybin(prev_spec_obs, current_spec_obs)
-                        if len(paired_fragments_bybin) >= MIN_FRAGPEAKS_INCOMMON:
+                        if len(paired_fragments_bybin) >= self.min_common_fragpeaks:
                             # we've got a pair! record everything
                             minints = [min(x[1], y[1]) for x, y in paired_fragments_bybin]
-                            top_minint_idxs = np.argsort(minints)[::1][0:TOPN_FRAGPEAKS_FOR_ERROR_EST]
+                            top_minint_idxs = np.argsort(minints)[::1][0:self.pair_topn_fragpeaks]
 
                             self.paired_fragment_peaks.extend([paired_fragments_bybin[i] for i in top_minint_idxs])
                             self.paired_precursor_mzs.append((prev_spec_obs.precursor_mz, current_spec_obs.precursor_mz))
@@ -232,7 +268,7 @@ class ErrorCalculator(object):
         bins_to_remove = set()
 
         for mz, intensity in spec_obs.topn_fragments:
-            if mz < MIN_MZ_FOR_BIN_FRAGMENT:
+            if mz < self.min_frag_mz:
                 continue
             bin_idx = self.calc_binidx_for_mz_fragment(mz)
             if bin_idx in bin_fragment_map:
@@ -267,9 +303,9 @@ class ErrorCalculator(object):
             precursor_distances_ppm.append(diff_th * 1000000 / mz1)
 
         # check for conditions that would cause us to bomb out
-        if len(precursor_distances_ppm) < MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
+        if len(precursor_distances_ppm) < self.min_peakpairs:
             raise ValueError("Need >= %d peak pairs to fit mixed distribution. Got only %d" %
-                             (MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(precursor_distances_ppm)))
+                             (self.min_peakpairs, len(precursor_distances_ppm)))
         proportion_precursor_mzs_zero = float(n_zero_precursor_deltas) / len(self.paired_precursor_mzs)
         logger.debug("proportion zero: %f" % proportion_precursor_mzs_zero)
         if proportion_precursor_mzs_zero > MAX_PROPORTION_PRECURSORDELTAS_0:
