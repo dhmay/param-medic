@@ -141,10 +141,24 @@ class ErrorCalculator(object):
         self.max_precursor_deltappm = max_precursor_deltappm
         self.min_peakpairs = min_peakpairs
 
+        logger.debug('min_precursor_mz: %f' % min_precursor_mz)
+        logger.debug('max_precursor_mz: %f' % max_precursor_mz)
+        logger.debug('min_frag_mz: %f' % min_frag_mz)
+        logger.debug('max_frag_mz: %f' % max_frag_mz)
+        logger.debug('charge: %f' % charge)
+        logger.debug('min_scan_fragpeaks: %f' % min_scan_fragpeaks)
+        logger.debug('topn_fragpeaks: %f' % topn_fragpeaks)
+        logger.debug('min_common_fragpeaks: %f' % min_common_fragpeaks)
+        logger.debug('pair_topn_fragpeaks: %f' % pair_topn_fragpeaks)
+        logger.debug('max_scan_separation: %f' % max_scan_separation)
+        logger.debug('max_precursor_deltappm: %f' % max_precursor_deltappm)
+
 
         # count the spectra that go by
         self.n_total_spectra = 0
         self.n_passing_spectra = 0
+        # count the spectra that go by, by charge
+        self.charge_spectracount_map = {}
 
         # multipliers to transform standord error values into algorithm parameters
         self.precursor_sigma_multiplier = PRECURSOR_SIGMA_MULTIPLIER
@@ -205,7 +219,12 @@ class ErrorCalculator(object):
         :param spectrum:
         :return:
         """
+        # accounting
         self.n_total_spectra += 1
+        if spectrum.charge not in self.charge_spectracount_map:
+            self.charge_spectracount_map[spectrum.charge] = 0
+        self.charge_spectracount_map[spectrum.charge] += 1
+
         if spectrum.charge != self.charge:
             return
         if len(spectrum.mz_array) < self.min_scan_fragpeaks:
