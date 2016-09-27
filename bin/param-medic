@@ -33,8 +33,8 @@ def declare_gather_args():
     # declare args
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('infiles', type=argparse.FileType('r'), nargs='+',
-                        help='input .mzML or .ms2 file(s). If multiple files are specified, " \
-                        "they will be processed together')
+                        help='input .mzML or .ms2 file(s). If multiple files are specified, \
+                        they will be processed together')
 
     parser.add_argument('--min-precursor-mz', type=float_greaterthanequalto0_type,
                         default=errorcalc.DEFAULT_MIN_MZ_FOR_BIN_PRECURSOR,
