@@ -103,10 +103,10 @@ class ErrorCalculator(object):
                  min_frag_mz=DEFAULT_MIN_MZ_FOR_BIN_FRAGMENT,
                  max_frag_mz=DEFAULT_MAX_MZ_FOR_BIN_FRAGMENT,
                  charge=DEFAULT_CHARGE,
-                 min_scan_fragpeaks=DEFAULT_MIN_SCAN_MS2PEAKS,
-                 topn_fragpeaks=DEFAULT_TOPN_FRAGPEAKS,
-                 min_common_fragpeaks=DEFAULT_MIN_FRAGPEAKS_INCOMMON,
-                 pair_topn_fragpeaks=DEFAULT_TOPN_FRAGPEAKS_FOR_ERROR_EST,
+                 min_scan_frag_peaks=DEFAULT_MIN_SCAN_MS2PEAKS,
+                 topn_frag_peaks=DEFAULT_TOPN_FRAGPEAKS,
+                 min_common_frag_peaks=DEFAULT_MIN_FRAGPEAKS_INCOMMON,
+                 pair_topn_frag_peaks=DEFAULT_TOPN_FRAGPEAKS_FOR_ERROR_EST,
                  max_scan_separation=DEFAULT_MAX_SCANS_BETWEEN_COMPARESCANS,
                  max_precursor_deltappm=DEFAULT_MAX_PRECURSORDIST_PPM,
                  min_peakpairs=DEFAULT_MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT
@@ -118,10 +118,10 @@ class ErrorCalculator(object):
         :param min_frag_mz:
         :param max_frag_mz:
         :param charge:
-        :param min_scan_fragpeaks:
-        :param topn_fragpeaks:
-        :param min_common_fragpeaks:
-        :param pair_topn_fragpeaks:
+        :param min_scan_frag_peaks:
+        :param topn_frag_peaks:
+        :param min_common_frag_peaks:
+        :param pair_topn_frag_peaks:
         :param max_scan_separation:
         :param max_precursor_deltappm:
         :param min_peakpairs:
@@ -133,10 +133,10 @@ class ErrorCalculator(object):
         self.min_frag_mz = min_frag_mz
         self.max_frag_mz = max_frag_mz
         self.charge = charge
-        self.min_scan_fragpeaks = min_scan_fragpeaks
-        self.topn_fragpeaks = topn_fragpeaks
-        self.min_common_fragpeaks = min_common_fragpeaks
-        self.pair_topn_fragpeaks = pair_topn_fragpeaks
+        self.min_scan_frag_peaks = min_scan_frag_peaks
+        self.topn_frag_peaks = topn_frag_peaks
+        self.min_common_frag_peaks = min_common_frag_peaks
+        self.pair_topn_frag_peaks = pair_topn_frag_peaks
         self.max_scan_separation = max_scan_separation
         self.max_precursor_deltappm = max_precursor_deltappm
         self.min_peakpairs = min_peakpairs
@@ -146,10 +146,10 @@ class ErrorCalculator(object):
         logger.debug('min_frag_mz: %f' % min_frag_mz)
         logger.debug('max_frag_mz: %f' % max_frag_mz)
         logger.debug('charge: %f' % charge)
-        logger.debug('min_scan_fragpeaks: %f' % min_scan_fragpeaks)
-        logger.debug('topn_fragpeaks: %f' % topn_fragpeaks)
-        logger.debug('min_common_fragpeaks: %f' % min_common_fragpeaks)
-        logger.debug('pair_topn_fragpeaks: %f' % pair_topn_fragpeaks)
+        logger.debug('min_scan_frag_peaks: %f' % min_scan_frag_peaks)
+        logger.debug('topn_frag_peaks: %f' % topn_frag_peaks)
+        logger.debug('min_common_frag_peaks: %f' % min_common_frag_peaks)
+        logger.debug('pair_topn_frag_peaks: %f' % pair_topn_frag_peaks)
         logger.debug('max_scan_separation: %f' % max_scan_separation)
         logger.debug('max_precursor_deltappm: %f' % max_precursor_deltappm)
 
@@ -219,7 +219,7 @@ class ErrorCalculator(object):
         :param spectrum:
         :return:
         """
-        # accounting
+        # accounting:
         self.n_total_spectra += 1
         if spectrum.charge not in self.charge_spectracount_map:
             self.charge_spectracount_map[spectrum.charge] = 0
@@ -227,12 +227,12 @@ class ErrorCalculator(object):
 
         if spectrum.charge != self.charge:
             return
-        if len(spectrum.mz_array) < self.min_scan_fragpeaks:
+        if len(spectrum.mz_array) < self.min_scan_frag_peaks:
             return
         if self.min_precursor_mz <= spectrum.precursor_mz <= self.max_precursor_mz:
             self.n_passing_spectra += 1
             # pull out the top fragments by intensity
-            topn_frag_idxs_intensity_desc = np.argsort(spectrum.intensity_array)[::-1][0:self.topn_fragpeaks]
+            topn_frag_idxs_intensity_desc = np.argsort(spectrum.intensity_array)[::-1][0:self.topn_frag_peaks]
             topn_frags = [(spectrum.mz_array[i], spectrum.intensity_array[i]) for i in topn_frag_idxs_intensity_desc]
 
             # create a SpectrumObservation object representing this spectrum. This takes up less
@@ -251,10 +251,10 @@ class ErrorCalculator(object):
                     if current_spec_obs.scan_number - prev_spec_obs.scan_number <= self.max_scan_separation:
                         # count the fragment peaks in common
                         paired_fragments_bybin = self.pair_fragments_bybin(prev_spec_obs, current_spec_obs)
-                        if len(paired_fragments_bybin) >= self.min_common_fragpeaks:
+                        if len(paired_fragments_bybin) >= self.min_common_frag_peaks:
                             # we've got a pair! record everything
                             minints = [min(x[1], y[1]) for x, y in paired_fragments_bybin]
-                            top_minint_idxs = np.argsort(minints)[::1][0:self.pair_topn_fragpeaks]
+                            top_minint_idxs = np.argsort(minints)[::1][0:self.pair_topn_frag_peaks]
 
                             self.paired_fragment_peaks.extend([paired_fragments_bybin[i] for i in top_minint_idxs])
                             self.paired_precursor_mzs.append((prev_spec_obs.precursor_mz, current_spec_obs.precursor_mz))
