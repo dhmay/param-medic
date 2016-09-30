@@ -93,6 +93,7 @@ MIN_SIGMA_PPM = 0.01
 MIN_SIGMA_TH = 0.00001
 
 
+
 class ErrorCalculator(object):
     """
     Class that accumulates pairs of precursors and fragments and uses them to estimate mass error.
@@ -321,35 +322,66 @@ class ErrorCalculator(object):
                 n_zero_precursor_deltas += 1
             precursor_distances_ppm.append(diff_th * 1000000 / mz1)
 
+        # we need to report precursor if fragment fails, and vice versa.
+        # these variables keep track of what failed and why
+        failed_precursor = False
+        precursor_message = "OK"
+
         # check for conditions that would cause us to bomb out
         if len(precursor_distances_ppm) < self.min_peakpairs:
-            raise ValueError("Need >= %d peak pairs to fit mixed distribution. Got only %d" %
-                             (self.min_peakpairs, len(precursor_distances_ppm)))
-        proportion_precursor_mzs_zero = float(n_zero_precursor_deltas) / len(self.paired_precursor_mzs)
-        logger.debug("proportion zero: %f" % proportion_precursor_mzs_zero)
-        if proportion_precursor_mzs_zero > MAX_PROPORTION_PRECURSORDELTAS_0:
-            raise ValueError("Too high a proportion of precursor mass differences (%f) are exactly 0. " \
-                             "Some processing has been done on this run that param-medic can't handle. " \
-                             "You should investigate what that processing might be." %
-                             proportion_precursor_mzs_zero)
+            failed_precursor = True
+            precursor_message = "Need >= %d peak pairs to fit mixed distribution. Got only %d" % (self.min_peakpairs, len(precursor_distances_ppm))
+        if not failed_precursor:
+            proportion_precursor_mzs_zero = float(n_zero_precursor_deltas) / len(self.paired_precursor_mzs)
+            logger.debug("proportion zero: %f" % proportion_precursor_mzs_zero)
+            if proportion_precursor_mzs_zero > MAX_PROPORTION_PRECURSORDELTAS_0:
+                failed_precursor = True
+                precursor_message = "Too high a proportion of precursor mass differences (%f) are exactly 0. " \
+                                 "Some processing has been done on this run that param-medic can't handle. " \
+                                 "You should investigate what that processing might be." % proportion_precursor_mzs_zero
+
+        precursor_mu_ppm_2measures, precursor_sigma_ppm_2measures = None, None
+        if not failed_precursor:
+            try:
+                precursor_mu_ppm_2measures, precursor_sigma_ppm_2measures = estimate_mu_sigma(precursor_distances_ppm, MIN_SIGMA_PPM)
+            except Exception as e:
+                failed_precursor = True
+                precursor_message = "Unknown error estimating mu, sigma: %s" % str(e)
+
+        failed_fragment = False
+        fragment_message = "OK"
 
         frag_distances_ppm = []
-        if len(self.paired_fragment_peaks) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
-            logger.debug("Using %d of %d peak pairs for fragment..." %
-                         (MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(self.paired_fragment_peaks)))
-            self.paired_fragment_peaks = random.sample(self.paired_fragment_peaks, MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT)
-        for fragpeak1, fragpeak2 in self.paired_fragment_peaks:
-            diff_th = fragpeak1[0] - fragpeak2[0]
-            frag_distances_ppm.append(diff_th * 1000000 / fragpeak1[0])
+        if len(self.paired_fragment_peaks) < self.min_peakpairs:
+            failed_fragment = True
+            fragment_message = "Need >= %d peak pairs to fit mixed distribution. Got only %d" % (self.min_peakpairs, len(self.paired_fragment_peaks))
+        frag_mu_ppm_2measures, frag_sigma_ppm_2measures = None, None
+        if not failed_fragment:
+            if len(self.paired_fragment_peaks) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
+                logger.debug("Using %d of %d peak pairs for fragment..." %
+                             (MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(self.paired_fragment_peaks)))
+                self.paired_fragment_peaks = random.sample(self.paired_fragment_peaks, MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT)
+            for fragpeak1, fragpeak2 in self.paired_fragment_peaks:
+                diff_th = fragpeak1[0] - fragpeak2[0]
+                frag_distances_ppm.append(diff_th * 1000000 / fragpeak1[0])
+            try:
+                # estimate the parameters of the component distributions for each of the mixed distributions.
+                frag_mu_ppm_2measures, frag_sigma_ppm_2measures = estimate_mu_sigma(frag_distances_ppm, MIN_SIGMA_PPM)
+            except Exception as e:
+                failed_fragment = True
+                fragment_message = "Unknown error estimating mu, sigma: %s" % str(e)
 
-        # estimate the parameters of the component distributions for each of the mixed distributions.
-        precursor_mu_ppm_2measures, precursor_sigma_ppm_2measures = estimate_mu_sigma(precursor_distances_ppm, MIN_SIGMA_PPM)
-        frag_mu_ppm_2measures, frag_sigma_ppm_2measures = estimate_mu_sigma(frag_distances_ppm, MIN_SIGMA_PPM)
+        if failed_precursor:
+            logger.debug("Failed precursor! %s" % precursor_message)
+        else:
+            logger.debug('precursor_mu_ppm_2measures: %f' % precursor_mu_ppm_2measures)
+            logger.debug('precursor_sigma_ppm_2measures: %f' % precursor_sigma_ppm_2measures)
 
-        logger.debug('precursor_mu_ppm_2measures: %f' % precursor_mu_ppm_2measures)
-        logger.debug('precursor_sigma_ppm_2measures: %f' % precursor_sigma_ppm_2measures)
-        logger.debug('frag_mu_ppm_2measures: %f' % frag_mu_ppm_2measures)
-        logger.debug('frag_sigma_ppm_2measures: %f' % frag_sigma_ppm_2measures)
+        if failed_fragment:
+            logger.debug("Failed fragment! %s" % fragment_message)
+        else:
+            logger.debug('frag_mu_ppm_2measures: %f' % frag_mu_ppm_2measures)
+            logger.debug('frag_sigma_ppm_2measures: %f' % frag_sigma_ppm_2measures)
 
         # what we have now measured, in the fit Gaussians, is the distribution of the difference
         # of two values drawn from the distribution of error values.
@@ -362,14 +394,21 @@ class ErrorCalculator(object):
         # incidentally, this transformation doesn't matter one bit, practically, since we're
         # inferring a multiplier for this value empirically. But it lets us report something
         # with an easily-interpretable meaning as an intermediate value
-        precursor_sigma_ppm = precursor_sigma_ppm_2measures/math.sqrt(2)
-        frag_sigma_ppm = frag_sigma_ppm_2measures/math.sqrt(2)
+        precursor_sigma_ppm = None
+        precursor_prediction_ppm = None
+        if not failed_precursor:
+            precursor_sigma_ppm = precursor_sigma_ppm_2measures/math.sqrt(2)
+            # generate prediction by multiplying by empirically-derived value
+            precursor_prediction_ppm = self.precursor_sigma_multiplier * precursor_sigma_ppm
+        frag_sigma_ppm = None
+        fragment_prediction_th = None
+        if not failed_fragment:
+            frag_sigma_ppm = frag_sigma_ppm_2measures/math.sqrt(2)
+            # generate prediction by multiplying by empirically-derived value
+            fragment_prediction_th = self.frag_sigma_multiplier * frag_sigma_ppm
 
-        # generate predictions by multiplying by empirically-derived values
-        precursor_prediction_ppm = self.precursor_sigma_multiplier * precursor_sigma_ppm
-        fragment_prediction_th = self.frag_sigma_multiplier * frag_sigma_ppm
-
-        return (precursor_sigma_ppm, frag_sigma_ppm,
+        return (failed_precursor, precursor_message, failed_fragment, fragment_message,
+                precursor_sigma_ppm, frag_sigma_ppm,
                 precursor_prediction_ppm, fragment_prediction_th)
 
 

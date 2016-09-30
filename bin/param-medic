@@ -150,13 +150,15 @@ def main():
         error_calculator.clear_all_bins()
 
     # calculate mass error distributions
-    (precursor_sigma_ppm, frag_sigma_ppm,
+    (failed_precursor, precursor_message, failed_fragment, fragment_message, precursor_sigma_ppm, frag_sigma_ppm,
      precursor_prediction_ppm, fragment_prediction_th) = \
         error_calculator.calc_masserror_dist()
 
     logger.debug("End time: %s. Elapsed time: %s" % (datetime.now(), datetime.now() - script_start_time))
-    logger.debug('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
-    logger.debug('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
+    if not failed_precursor:
+        logger.debug('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
+    if not failed_fragment:
+        logger.debug('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
     logger.debug('')
 
     most_common_charge = 0
@@ -166,11 +168,19 @@ def main():
             n_with_mostcommon_charge = error_calculator.charge_spectracount_map[charge]
             most_common_charge = charge
     print('most common MS/MS scan charge: %d' % most_common_charge)
-    print('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
-    print('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
+    if failed_precursor:
+        print('ERROR: failed to calculate precursor error:')
+        print(precursor_message)
+    else:
+        print('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
+        print("Precursor error estimate (ppm): %.2f" % precursor_prediction_ppm)
     print('')
-    print("Precursor error estimate (ppm): %.2f" % precursor_prediction_ppm)
-    print("Fragment bin size estimate (Th): %.4f" % fragment_prediction_th)
+    if failed_fragment:
+        print('ERROR: failed to calculate fragment error:')
+        print(fragment_message)
+    else:
+        print('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
+        print("Fragment bin size estimate (Th): %.4f" % fragment_prediction_th)
 
 
 def generate_spectra(spectra_file):
