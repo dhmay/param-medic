@@ -85,7 +85,7 @@ MAX_PROPORTION_PRECURSORDELTAS_0 = 0.5
 MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT = 100000
 
 # empirically-derived values for transforming Gaussian error distributions into predictions
-FRAG_SIGMA_MULTIPLIER = 0.003543
+FRAG_SIGMA_MULTIPLIER = 0.003625
 PRECURSOR_SIGMA_MULTIPLIER = 15.720249
 
 # minimum allowed values for sigma of the estimated normal
