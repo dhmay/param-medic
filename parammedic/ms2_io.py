@@ -84,6 +84,7 @@ def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=Fals
 
         elif chunks[0] == "S":
             logger.debug("S line")
+
             if len(chunks) != 4:
                 raise ValueError("Misformatted line %d.\n%s\n" % (line_number, line))
             # this begins a new scan, so start by writing the old one
@@ -104,13 +105,13 @@ def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=Fals
                     logger.debug("Yielded #%d" % n_yielded)
                 # zero out everything not on this line so that we know if we got it for the next scan
                 charge = None
-                fragment_mzs = []
-                fragment_intensities = []
-
             else:
                 logger.debug("Incomplete scan!")
 
-            in_preamble = False
+            # new scan, so reset mz and intensity lists
+            fragment_mzs = []
+            fragment_intensities = []
+            
             precursor_mz = float(chunks[3])
             scan_number = int(chunks[1])
 
