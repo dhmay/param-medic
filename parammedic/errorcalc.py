@@ -78,15 +78,15 @@ DEFAULT_MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT = 200
 # constants
 
 # Separation between Averagine peaks. This is used for binning spectra
-AVERAGINE_PEAK_SEPARATION = 1.000507
+AVERAGINE_PEAK_SEPARATION = 1.0005079
 # maximum proportion of precursor delta-masses that can be 0, otherwise we give up
 MAX_PROPORTION_PRECURSORDELTAS_0 = 0.5
 # maximum peaks to use to fit a mixed distribution
 MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT = 100000
 
 # empirically-derived values for transforming Gaussian error distributions into predictions
-FRAG_SIGMA_MULTIPLIER = 0.003625
-PRECURSOR_SIGMA_MULTIPLIER = 15.720249
+FRAG_SIGMA_MULTIPLIER = 0.003752
+PRECURSOR_SIGMA_MULTIPLIER = 15.699435
 
 # minimum allowed values for sigma of the estimated normal
 MIN_SIGMA_PPM = 0.01
