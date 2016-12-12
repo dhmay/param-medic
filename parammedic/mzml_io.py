@@ -76,7 +76,7 @@ def read_scan(scan):
             charge = precursor_selected_ion_map['possible charge state']
         else:
             raise ValueError("Could not find charge for scan %d" % scan_number)
-        
+
         return errorcalc.MS2Spectrum(scan_number, retention_time,
                                      mz_array,
                                      intensity_array,
