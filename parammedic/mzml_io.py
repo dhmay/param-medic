@@ -47,7 +47,14 @@ def read_scans(mzml_file, ms_levels=(1, 2)):
     with mzml.MzML(mzml_file) as reader:
         for scan in reader:
             if scan['ms level'] in ms_levels:
-                yield read_scan(scan)
+                # ignore this scan if we get a ValueError.
+                # ValueError is only raised if we can't infer charge.
+                # If we still have enough scans where we could infer charge, OK to
+                # ignore these.
+                try:
+                    yield read_scan(scan)
+                except ValueError:
+                    logger.debug("Warning! Scan with indeterminable charge.")
 
 
 def read_scan(scan):
