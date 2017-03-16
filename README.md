@@ -1,6 +1,15 @@
 # param-medic
 Param-Medic breathes new life into MS/MS database searches by optimizing search parameter settings for your data.
 
+## Installation:
+
+Param-Medic requires Python 2.7. It will not install properly in Python 3.X. There are two ways to install Param-Medic:
+
+1.  Using PyPi: type "pip install param-medic"
+2.  Download the Param-Medic source and run the setup script from the param-medic directory. This requires two commands:
+  * python setup.py build
+  * python setup.py install
+
 ## Usage:
 
 param-medic [--options] \<spectra file\>+
