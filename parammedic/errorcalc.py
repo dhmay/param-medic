@@ -160,6 +160,9 @@ class ErrorCalculator(object):
         self.n_passing_spectra = 0
         # count the spectra that go by, by charge
         self.charge_spectracount_map = {}
+        self.n_spectra_samebin_other_spectrum = 0
+        self.n_spectra_withinppm_other_spectrum = 0
+        self.n_spectra_withinppm_withinscans_other_spectrum = 0
 
         # multipliers to transform standord error values into algorithm parameters
         self.precursor_sigma_multiplier = PRECURSOR_SIGMA_MULTIPLIER
@@ -246,11 +249,14 @@ class ErrorCalculator(object):
                 prev_spec_obs = self.binidx_currentspectrum_map[precursor_bin_idx]
                 precursor_mz_diff = spectrum.precursor_mz - prev_spec_obs.precursor_mz
                 precursor_mz_diff_ppm = precursor_mz_diff * 1000000 / spectrum.precursor_mz
+                self.n_spectra_samebin_other_spectrum += 1
                 # check precursor
                 if abs(precursor_mz_diff_ppm) < self.max_precursor_deltappm:
                     # check scan count between the scans
+                    self.n_spectra_withinppm_other_spectrum += 1
                     if current_spec_obs.scan_number - prev_spec_obs.scan_number <= self.max_scan_separation:
                         # count the fragment peaks in common
+                        self.n_spectra_withinppm_withinscans_other_spectrum += 1
                         paired_fragments_bybin = self.pair_fragments_bybin(prev_spec_obs, current_spec_obs)
                         if len(paired_fragments_bybin) >= self.min_common_frag_peaks:
                             # we've got a pair! record everything
@@ -310,6 +316,12 @@ class ErrorCalculator(object):
         logger.debug("Precursor pairs: %d" % len(self.paired_precursor_mzs))
         logger.debug("Fragment pairs: %d" % len(self.paired_fragment_peaks))
 
+        logger.debug("Total spectra in same bin as another: %d" % self.n_spectra_samebin_other_spectrum)
+        logger.debug("Total spectra in same bin as another and within m/z tol: %d" %
+                     self.n_spectra_withinppm_other_spectrum)
+        logger.debug("Total spectra in same bin as another and within m/z tol and within scan range: %d" %
+                     self.n_spectra_withinppm_withinscans_other_spectrum)
+
         precursor_distances_ppm = []
         n_zero_precursor_deltas = 0
         if len(self.paired_precursor_mzs) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
@@ -330,7 +342,17 @@ class ErrorCalculator(object):
         # check for conditions that would cause us to bomb out
         if len(precursor_distances_ppm) < self.min_peakpairs:
             failed_precursor = True
-            precursor_message = "Need >= %d peak pairs to fit mixed distribution. Got only %d" % (self.min_peakpairs, len(precursor_distances_ppm))
+            precursor_message = ("Need >= %d peak pairs to fit mixed distribution. Got only %d.\nDetails:\n" \
+                                 "Spectra in same averagine bin as another: %d\n" \
+                                 "    ... and also within m/z tolerance: %d\n" \
+                                 "    ... and also within scan range: %d\n"
+                                 "    ... and also with sufficient in-common fragments: %d\n" %
+                                 (self.min_peakpairs, len(precursor_distances_ppm),
+                                  self.n_spectra_samebin_other_spectrum,
+                                  self.n_spectra_withinppm_other_spectrum,
+                                  self.n_spectra_withinppm_withinscans_other_spectrum,
+                                  len(precursor_distances_ppm)))
+
         if not failed_precursor:
             proportion_precursor_mzs_zero = float(n_zero_precursor_deltas) / len(self.paired_precursor_mzs)
             logger.debug("proportion zero: %f" % proportion_precursor_mzs_zero)
@@ -354,7 +376,16 @@ class ErrorCalculator(object):
         frag_distances_ppm = []
         if len(self.paired_fragment_peaks) < self.min_peakpairs:
             failed_fragment = True
-            fragment_message = "Need >= %d peak pairs to fit mixed distribution. Got only %d" % (self.min_peakpairs, len(self.paired_fragment_peaks))
+            fragment_message = ("Need >= %d peak pairs to fit mixed distribution. Got only %d\nDetails:\n" \
+                                "Spectra in same averagine bin as another: %d\n" \
+                                "    ... and also within m/z tolerance: %d\n" \
+                                "    ... and also within scan range: %d\n" 
+                                "    ... and also with sufficient in-common fragments: %d\n"%
+                                (self.min_peakpairs, len(self.paired_fragment_peaks),
+                                 self.n_spectra_samebin_other_spectrum,
+                                 self.n_spectra_withinppm_other_spectrum,
+                                 self.n_spectra_withinppm_withinscans_other_spectrum,
+                                 len(self.paired_fragment_peaks)))
         frag_mu_ppm_2measures, frag_sigma_ppm_2measures = None, None
         if not failed_fragment:
             if len(self.paired_fragment_peaks) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
