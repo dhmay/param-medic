@@ -74,6 +74,10 @@ DEFAULT_MAX_PRECURSORDIST_PPM = 50.
 # minimum peaks required to try to fit a mixed distribution
 DEFAULT_MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT = 200
 
+#if more than this proportion of mass bins have more than one peak,
+#we might be looking at profile-mode data
+PROPORTION_MASSBINS_MULTIPEAK_INDICATES_PROFILEMODE = 0.5
+
 
 # constants
 
@@ -182,6 +186,11 @@ class ErrorCalculator(object):
         # the paired peak values that we'll use to estimate mass error
         self.paired_fragment_peaks = []
         self.paired_precursor_mzs = []
+
+        # track the number of candidatebins in which there's just one fragment, and the number in which there
+        # are multiple. The ratio of the two can indicate profile-mode data
+        self.n_bins_multiple_frags = 0
+        self.n_bins_one_frag = 0
 
     # these utility methods find the right bin for a given mz
 
@@ -303,6 +312,8 @@ class ErrorCalculator(object):
                 bin_fragment_map[bin_idx] = mz, intensity
         for bin_idx in bins_to_remove:
             del bin_fragment_map[bin_idx]
+        self.n_bins_multiple_frags += len(bins_to_remove)
+        self.n_bins_one_frag += len(bin_fragment_map)
         return bin_fragment_map
 
     def calc_masserror_dist(self):
@@ -321,6 +332,11 @@ class ErrorCalculator(object):
                      self.n_spectra_withinppm_other_spectrum)
         logger.debug("Total spectra in same bin as another and within m/z tol and within scan range: %d" %
                      self.n_spectra_withinppm_withinscans_other_spectrum)
+        # check the proportion of mass bins, in the whole file, that have multiple fragments.
+        # If that's high, we might be looking at profile-mode data.
+        proportion_bins_multiple_frags = float(self.n_bins_multiple_frags) / \
+                                         (self.n_bins_one_frag + self.n_bins_multiple_frags)
+        logger.debug("Proportion of bins with multiple fragments: %.02f" % (proportion_bins_multiple_frags))
 
         precursor_distances_ppm = []
         n_zero_precursor_deltas = 0
@@ -339,19 +355,27 @@ class ErrorCalculator(object):
         failed_precursor = False
         precursor_message = "OK"
 
+        if proportion_bins_multiple_frags > PROPORTION_MASSBINS_MULTIPEAK_INDICATES_PROFILEMODE:
+            logger.info("Is this profile-mode data? Proportion of mass bins with multiple peaks is quite high (%.02f)" %
+                        proportion_bins_multiple_frags)
+            logger.info("Param-Medic will not perform well on profile-mode data.")
+
         # check for conditions that would cause us to bomb out
         if len(precursor_distances_ppm) < self.min_peakpairs:
             failed_precursor = True
             precursor_message = ("Need >= %d peak pairs to fit mixed distribution. Got only %d.\nDetails:\n" \
                                  "Spectra in same averagine bin as another: %d\n" \
                                  "    ... and also within m/z tolerance: %d\n" \
-                                 "    ... and also within scan range: %d\n"
+                                 "    ... and also within scan range: %d\n" \
                                  "    ... and also with sufficient in-common fragments: %d\n" %
                                  (self.min_peakpairs, len(precursor_distances_ppm),
                                   self.n_spectra_samebin_other_spectrum,
                                   self.n_spectra_withinppm_other_spectrum,
                                   self.n_spectra_withinppm_withinscans_other_spectrum,
                                   len(precursor_distances_ppm)))
+            if proportion_bins_multiple_frags > PROPORTION_MASSBINS_MULTIPEAK_INDICATES_PROFILEMODE:
+                precursor_message += "Is this profile-mode data? Proportion of mass bins with multiple peaks is quite high (%.02f)\n" % proportion_bins_multiple_frags
+                precursor_message += "Param-Medic will not perform well on profile-mode data.\n"
 
         if not failed_precursor:
             proportion_precursor_mzs_zero = float(n_zero_precursor_deltas) / len(self.paired_precursor_mzs)
@@ -386,6 +410,9 @@ class ErrorCalculator(object):
                                  self.n_spectra_withinppm_other_spectrum,
                                  self.n_spectra_withinppm_withinscans_other_spectrum,
                                  len(self.paired_fragment_peaks)))
+            if proportion_bins_multiple_frags > PROPORTION_MASSBINS_MULTIPEAK_INDICATES_PROFILEMODE:
+                fragment_message += "Is this profile-mode data? Proportion of mass bins with multiple peaks is quite high (%.02f)\n" % proportion_bins_multiple_frags
+                fragment_message += "Param-Medic will not perform well on profile-mode data.\n"
         frag_mu_ppm_2measures, frag_sigma_ppm_2measures = None, None
         if not failed_fragment:
             if len(self.paired_fragment_peaks) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
