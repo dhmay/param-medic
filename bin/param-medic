@@ -10,9 +10,7 @@ If multiple files are specified, they will be processed together.
 import argparse
 import logging
 from datetime import datetime
-from parammedic import errorcalc
-from parammedic import ms2_io
-from parammedic import mzml_io
+from parammedic import errorcalc, ms2_io, mzml_io, mod_inference
 from parammedic import __version__
 import gzip
 
@@ -21,7 +19,7 @@ __copyright__ = "Copyright (c) 2016 Damon May"
 __license__ = "Apache 2.0"
 
 logger = logging.getLogger(__name__)
-
+SPECTRUM_PROCESSED_REPORT_INTERVAL = 1000
 
 def declare_gather_args():
     """
@@ -76,6 +74,10 @@ def declare_gather_args():
                         default=errorcalc.DEFAULT_MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT,
                         help='minimum number of peak pairs (for precursor or fragment) that must be successfully \
                         paired in order to attempt to estimate error distribution')
+    parser.add_argument('--noerrorcalc', action="store_true",
+                        help='suppress precursor and fragment error calculation')
+    parser.add_argument('--nomodinference', action="store_true",
+                        help='suppress modification inference')
 
     parser.add_argument('--debug', action="store_true", help='Enable debug logging')
     parser.add_argument('--version', action='version', version='%(prog)s {version}'.format(version=__version__))
@@ -125,62 +127,91 @@ def main():
         logger.setLevel(logging.DEBUG)
         # any module-specific debugging goes below
         errorcalc.logger.setLevel(logging.DEBUG)
+        mod_inference.logger.setLevel(logging.DEBUG)
 
     script_start_time = datetime.now()
     logger.debug("Start time: %s" % script_start_time)
 
-    error_calculator = errorcalc.ErrorCalculator(min_precursor_mz=args.min_precursor_mz,
-                                                 max_precursor_mz=args.max_precursor_mz,
-                                                 min_frag_mz=args.min_frag_mz,
-                                                 max_frag_mz=args.max_frag_mz,
-                                                 charge=args.charge,
-                                                 min_scan_frag_peaks=args.min_scan_frag_peaks,
-                                                 topn_frag_peaks=args.top_n_frag_peaks,
-                                                 min_common_frag_peaks=args.min_common_frag_peaks,
-                                                 pair_topn_frag_peaks=args.pair_top_n_frag_peaks,
-                                                 max_scan_separation=args.max_scan_separation,
-                                                 max_precursor_deltappm=args.max_precursor_delta_ppm,
-                                                 min_peakpairs=args.min_peak_pairs)
+    if not args.noerrorcalc:
+        error_calculator = errorcalc.ErrorCalculator(min_precursor_mz=args.min_precursor_mz,
+                                                     max_precursor_mz=args.max_precursor_mz,
+                                                     min_frag_mz=args.min_frag_mz,
+                                                     max_frag_mz=args.max_frag_mz,
+                                                     charge=args.charge,
+                                                     min_scan_frag_peaks=args.min_scan_frag_peaks,
+                                                     topn_frag_peaks=args.top_n_frag_peaks,
+                                                     min_common_frag_peaks=args.min_common_frag_peaks,
+                                                     pair_topn_frag_peaks=args.pair_top_n_frag_peaks,
+                                                     max_scan_separation=args.max_scan_separation,
+                                                     max_precursor_deltappm=args.max_precursor_delta_ppm,
+                                                     min_peakpairs=args.min_peak_pairs)
 
+    modification_detectors = []
+    if not args.nomodinference:
+        silac_inferrer = mod_inference.PrecursorSeparationProportionCalculator("SILAC",
+                                                                               mod_inference.DEFAULT_SILAC_MOD_BIN_DISTANCES)
+        tmt_inferrer = mod_inference.ReporterIonProportionCalculator("TMT",
+                                                                     mod_inference.DEFAULT_TMT_REPORTERION_MZS)
+        itraq_4plex_inferrer = mod_inference.ReporterIonProportionCalculator("iTRAQ 4-plex",
+                                                                             mod_inference.ITRAQ_4PLEX_REPORTERION_MZS)
+        itraq_8plex_inferrer = mod_inference.ReporterIonProportionCalculator("iTRAQ 8-plex",
+                                                                             mod_inference.ITRAQ_8PLEX_REPORTERION_MZS)
+        modification_detectors.extend([silac_inferrer, tmt_inferrer, itraq_4plex_inferrer, itraq_8plex_inferrer])
+
+    n_spectra_processed = 0
     for infile in args.infiles:
         logger.debug("Processing input file %s..." % infile.name)
         for spectrum in generate_spectra(infile):
-            error_calculator.process_spectrum(spectrum)
+            if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
+                logger.debug("  processed %d total spectra..." % n_spectra_processed)
+            n_spectra_processed += 1
+            if not args.noerrorcalc:
+                error_calculator.process_spectrum(spectrum)
+            for mod_detector in modification_detectors:
+                mod_detector.process_spectrum(spectrum)
         # clear the bins so we don't end up using pairs across files
         error_calculator.clear_all_bins()
 
-    # calculate mass error distributions
-    (failed_precursor, precursor_message, failed_fragment, fragment_message, precursor_sigma_ppm, frag_sigma_ppm,
-     precursor_prediction_ppm, fragment_prediction_th) = \
-        error_calculator.calc_masserror_dist()
+    print("Processed all spectra. Summarizing...")
+    if not args.noerrorcalc:
+        print("Error estimation summary:")
+        # calculate mass error distributions
+        (failed_precursor, precursor_message, failed_fragment, fragment_message, precursor_sigma_ppm, frag_sigma_ppm,
+         precursor_prediction_ppm, fragment_prediction_th) = \
+            error_calculator.calc_masserror_dist()
+        if not failed_precursor:
+            logger.debug('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
+        if not failed_fragment:
+            logger.debug('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
+        logger.debug('')
+
+        most_common_charge = 0
+        n_with_mostcommon_charge = 0
+        for charge in error_calculator.charge_spectracount_map:
+            if error_calculator.charge_spectracount_map[charge] > n_with_mostcommon_charge:
+                n_with_mostcommon_charge = error_calculator.charge_spectracount_map[charge]
+                most_common_charge = charge
+        print('most common MS/MS scan charge: %d' % most_common_charge)
+        if failed_precursor:
+            print('ERROR: failed to calculate precursor error:')
+            print(precursor_message)
+        else:
+            print('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
+            print("Precursor error estimate (ppm): %.2f" % precursor_prediction_ppm)
+        print('')
+        if failed_fragment:
+            print('ERROR: failed to calculate fragment error:')
+            print(fragment_message)
+        else:
+            print('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
+            print("Fragment bin size estimate (Th): %.4f" % fragment_prediction_th)
+
+    if not args.nomodinference:
+        print("Modification inference summary:")
+        for mod_detector in modification_detectors:
+            mod_detector.summarize()
 
     logger.debug("End time: %s. Elapsed time: %s" % (datetime.now(), datetime.now() - script_start_time))
-    if not failed_precursor:
-        logger.debug('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
-    if not failed_fragment:
-        logger.debug('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
-    logger.debug('')
-
-    most_common_charge = 0
-    n_with_mostcommon_charge = 0
-    for charge in error_calculator.charge_spectracount_map:
-        if error_calculator.charge_spectracount_map[charge] > n_with_mostcommon_charge:
-            n_with_mostcommon_charge = error_calculator.charge_spectracount_map[charge]
-            most_common_charge = charge
-    print('most common MS/MS scan charge: %d' % most_common_charge)
-    if failed_precursor:
-        print('ERROR: failed to calculate precursor error:')
-        print(precursor_message)
-    else:
-        print('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
-        print("Precursor error estimate (ppm): %.2f" % precursor_prediction_ppm)
-    print('')
-    if failed_fragment:
-        print('ERROR: failed to calculate fragment error:')
-        print(fragment_message)
-    else:
-        print('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
-        print("Fragment bin size estimate (Th): %.4f" % fragment_prediction_th)
 
 
 def generate_spectra(spectra_file):

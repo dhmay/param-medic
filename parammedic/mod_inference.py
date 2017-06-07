@@ -7,23 +7,61 @@ a given run.
 import logging
 import math
 from util import AVERAGINE_PEAK_SEPARATION, HYDROGEN_MASS
+import abc
+
 
 __author__ = "Damon May"
 __copyright__ = "Copyright (c) 2016 Damon May"
 __license__ = ""
 __version__ = ""
 
+# default distances between precursors to check for SILAC labeling
+DEFAULT_SILAC_MOD_BIN_DISTANCES = [4, 8]
+
+DEFAULT_TMT_REPORTERION_MZS = [126.0, 127.0, 128.0, 129.0, 130.0, 131.0]
+ITRAQ_4PLEX_REPORTERION_MZS = [114.0, 115.0, 116.0, 117.0]
+ITRAQ_8PLEX_REPORTERION_MZS = [113.0, 114.0, 115.0, 116.0, 117.0, 118.0, 119.0, 121.0]
+
+# number of bins to keep track of for mass. Approximates maximum precursor mass considered
+MAX_BINS_FOR_MASS = 20000
+
+
 logger = logging.getLogger(__name__)
 
 
-class ReporterIonProportionCalculator(object):
+class ModificationDetector(object):
+    """
+    Abstract superclass for objects to detect different kinds of modifications
+    """
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def process_spectrum(self, spectrum):
+        """
+        Process a single spectrum
+        :param spectrum: 
+        :return: 
+        """
+        return
+    
+    @abc.abstractmethod
+    def summarize(self):
+        """
+        This method gets called after all spectra are processed
+        :return: 
+        """
+        return
+    
+
+class ReporterIonProportionCalculator(ModificationDetector):
     """
     Class that accumulates the proportion of MS/MS fragment signal that's accounted for
     by a list of reporter ion mzs.
     """
-    def __init__(self, reporter_ion_mzs):
+    def __init__(self, name, reporter_ion_mzs):
+        self.name = name
         self.n_total_spectra = 0
-        self.reporter_ion_bins = set([calc_binidx_for_mz_fragment([mz]) for mz in reporter_ion_mzs])
+        self.reporter_ion_bins = set([calc_binidx_for_mz_fragment(mz) for mz in reporter_ion_mzs])
 
         self.sum_proportions_in_bins = 0.0
         logger.debug("Reporter ion bins: %s" % str(self.reporter_ion_bins))
@@ -46,23 +84,26 @@ class ReporterIonProportionCalculator(object):
             signal_total += spectrum.intensity_array[i]
         self.sum_proportions_in_bins += (signal_in_bin / signal_total)
 
-    def calc_proportion_reporter_ions(self):
+    def summarize(self):
         """
-        Return the average proportion of signal coming from reporter ions across
+        Calculate the average proportion of signal coming from reporter ions across
         all spectra
         :return: 
         """
-        return self.sum_proportions_in_bins / self.n_total_spectra
+        proportion_reporter_ions = self.sum_proportions_in_bins / self.n_total_spectra
+        print("%s reporter ions as proportion of total signal: %.03f" % 
+              (self.name, proportion_reporter_ions))
 
 
-class PrecursorSeparationProportionCalculator(object):
+class PrecursorSeparationProportionCalculator(ModificationDetector):
     """
     Calculate the number of pairs of spectra that are separated by 
     a given set of distances, as a proporation of all pairs of spectra.
     """
-    def __init__(self, separation_bin_distances):
+    def __init__(self, name, separation_bin_distances):
+        self.name = name
         self.bin_distances = separation_bin_distances
-        self.spectrum_counts_in_bins = [0] * 10000
+        self.spectrum_counts_in_bins = [0] * MAX_BINS_FOR_MASS
         self.highest_binidx_used = 0
         self.n_total_spectra = 0
 
@@ -80,7 +121,7 @@ class PrecursorSeparationProportionCalculator(object):
             return
         self.spectrum_counts_in_bins[binidx] += 1
 
-    def calc_proportions_with_separations(self):
+    def summarize(self):
         """
         Return a dict from mass bin separations to the proportions of spectrum pairs that have
         a precursor having a match with that separation
@@ -101,10 +142,19 @@ class PrecursorSeparationProportionCalculator(object):
                     counts_with_separations[bin_distance] += count_this_bin * count_other_bin
         proportions_with_separations = {}
         n_total_pairs = self.n_total_spectra * (self.n_total_spectra - 1) / 2
+        logger.debug("summarize(): n_total_spectra=%d, n_total_pairs=%d" % (self.n_total_spectra, n_total_pairs))
         for bin_distance in self.bin_distances:
-            proportions_with_separations[bin_distance] = counts_with_separations[bin_distance] / n_total_pairs
-        return proportions_with_separations
+            proportions_with_separations[bin_distance] = float(counts_with_separations[bin_distance]) / n_total_pairs
+            logger.debug("count with separation %d: %d" % (bin_distance, counts_with_separations[bin_distance]))
+        overall_proportion = sum(proportions_with_separations)
+        print("%s: proportion of precursor pairs with appropriate separation: overall=%.05f" %
+              (self.name, overall_proportion))
+        for bin_distance in self.bin_distances:
+            print("    proportion with separation %dDa: %.05f" %
+                  (bin_distance, proportions_with_separations[bin_distance]))
 
+
+# utility methods
 
 def calc_binidx_for_mass_precursor(mass):
     return int(math.floor(mass / AVERAGINE_PEAK_SEPARATION))
