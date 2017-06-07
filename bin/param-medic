@@ -148,15 +148,18 @@ def main():
 
     modification_detectors = []
     if not args.nomodinference:
-        silac_inferrer = mod_inference.PrecursorSeparationProportionCalculator("SILAC",
+        silac_detector = mod_inference.PrecursorSeparationProportionCalculator("SILAC",
                                                                                mod_inference.DEFAULT_SILAC_MOD_BIN_DISTANCES)
-        tmt_inferrer = mod_inference.ReporterIonProportionCalculator("TMT",
+        tmt_detector = mod_inference.ReporterIonProportionCalculator("TMT",
                                                                      mod_inference.DEFAULT_TMT_REPORTERION_MZS)
-        itraq_4plex_inferrer = mod_inference.ReporterIonProportionCalculator("iTRAQ 4-plex",
+        itraq_4plex_detector = mod_inference.ReporterIonProportionCalculator("iTRAQ 4-plex",
                                                                              mod_inference.ITRAQ_4PLEX_REPORTERION_MZS)
-        itraq_8plex_inferrer = mod_inference.ReporterIonProportionCalculator("iTRAQ 8-plex",
+        itraq_8plex_detector = mod_inference.ReporterIonProportionCalculator("iTRAQ 8-plex",
                                                                              mod_inference.ITRAQ_8PLEX_REPORTERION_MZS)
-        modification_detectors.extend([silac_inferrer, tmt_inferrer, itraq_4plex_inferrer, itraq_8plex_inferrer])
+        phospho_detector = mod_inference.PhosphoLossProportionCalculator()
+        modification_detectors.extend([silac_detector, tmt_detector,
+                                       itraq_4plex_detector, itraq_8plex_detector,
+                                       phospho_detector])
 
     n_spectra_processed = 0
     for infile in args.infiles:

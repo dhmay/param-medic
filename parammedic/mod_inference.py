@@ -2,6 +2,9 @@
 """
 Code to infer the presence or absence of a defined set of modifications in 
 a given run.
+
+todo: improve efficiency by sharing calculations like total ms signal between 
+detectors
 """
 
 import logging
@@ -33,6 +36,9 @@ ITRAQ_8PLEX_REPORTERION_MZS = [113.0, 114.0, 115.0, 116.0, 117.0, 118.0, 119.0, 
 # number of bins to keep track of for mass. Approximates maximum precursor mass considered
 MAX_BINS_FOR_MASS = 20000
 
+# delta mass representing a loss of phosphorylation
+DELTA_MASS_PHOSPHO_LOSS = 80.0
+
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +65,46 @@ class ModificationDetector(object):
         :return: 
         """
         return
+
+
+class PhosphoLossProportionCalculator(ModificationDetector):
+    """
+    Accumulates the proportion of MS/MS fragment signal that's accounted for
+    by fragments representing a loss of DELTA_MASS_PHOSPHO_LOSS Da from the precursor mass
+    """
+    def __init__(self):
+        self.n_total_spectra = 0
+        self.sum_proportions_in_phosopholoss = 0.0
+
+    def process_spectrum(self, spectrum):
+        """
+        Handle a spectrum. Calculate precursor mass from m/z and charge, then calculate
+        mass of phospho loss and convert back to m/z. Look for charge-1 ion representing
+        that loss. accumulate proportion of total signal contained in those ions
+        :param spectrum: 
+        :return: 
+        """
+        self.n_total_spectra += 1
+        precursor_mass = calc_mplush_from_mz_charge(spectrum.precursor_mz, spectrum.charge)
+        phospho_loss_mass = precursor_mass - DELTA_MASS_PHOSPHO_LOSS
+        phospho_loss_charge1_mz = calc_mz_from_mplush_charge(phospho_loss_mass, 1)
+        phospho_loss_bin = calc_binidx_for_mz_fragment(phospho_loss_charge1_mz)
+        signal_in_bin = 0.0
+        signal_total = 0.0
+        for i in xrange(0, len(spectrum.mz_array)):
+            if calc_binidx_for_mz_fragment(spectrum.mz_array[i]) == phospho_loss_bin:
+                signal_in_bin += spectrum.intensity_array[i]
+            signal_total += spectrum.intensity_array[i]
+        self.sum_proportions_in_phosopholoss += (signal_in_bin / signal_total)
+
+    def summarize(self):
+        """
+        Calculate the average proportion of signal coming from reporter ions across
+        all spectra
+        :return: 
+        """
+        proportion_phospholoss = self.sum_proportions_in_phosopholoss / self.n_total_spectra
+        print("Phosphorylation loss as proportion of total signal: %.03f" % proportion_phospholoss)
     
 
 class ReporterIonProportionCalculator(ModificationDetector):
@@ -180,3 +226,13 @@ def calc_mplush_from_mz_charge(mz, charge):
     :return:
     """
     return (mz - HYDROGEN_MASS) * charge + HYDROGEN_MASS
+
+
+def calc_mz_from_mplush_charge(m_plus_h, charge):
+    """
+    Given an M+H and a charge, calculate mz
+    :param m_plus_h:
+    :param charge:
+    :return:
+    """
+    return (m_plus_h - HYDROGEN_MASS) / charge + HYDROGEN_MASS
