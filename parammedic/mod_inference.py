@@ -16,7 +16,15 @@ __license__ = ""
 __version__ = ""
 
 # default distances between precursors to check for SILAC labeling
-DEFAULT_SILAC_MOD_BIN_DISTANCES = [4, 8]
+# 6Da rationale:
+# 13C6 L-Lysine is a stable isotope of 12C6 L-Lysine and is 6 Da heavier than 12C6 L-Lysine.
+# 13C6 L- Arginine is a stable isotope of 12C6 L- Arginine and is 6 Da heavier than 12C6 L- Arginine.
+# 4Da and 8Da rationale:
+# For lysine three-plex experiments, 4,4,5,5-D4 L-lysine and 13C6 15N2 L-lysine are used to
+# generate peptides with 4- and 8-Da mass shifts, respectively, compared to peptides generated
+# with light lysine.
+DEFAULT_SILAC_MOD_BIN_DISTANCES = [4, 6, 8]
+
 
 DEFAULT_TMT_REPORTERION_MZS = [126.0, 127.0, 128.0, 129.0, 130.0, 131.0]
 ITRAQ_4PLEX_REPORTERION_MZS = [114.0, 115.0, 116.0, 117.0]
@@ -146,7 +154,7 @@ class PrecursorSeparationProportionCalculator(ModificationDetector):
         for bin_distance in self.bin_distances:
             proportions_with_separations[bin_distance] = float(counts_with_separations[bin_distance]) / n_total_pairs
             logger.debug("count with separation %d: %d" % (bin_distance, counts_with_separations[bin_distance]))
-        overall_proportion = sum(proportions_with_separations)
+        overall_proportion = sum(proportions_with_separations.values())
         print("%s: proportion of precursor pairs with appropriate separation: overall=%.05f" %
               (self.name, overall_proportion))
         for bin_distance in self.bin_distances:
