@@ -6,6 +6,8 @@ Some bits grabbed with permission from Alex Hu
 """
 
 import logging
+
+import parammedic.util
 from parammedic import errorcalc
 
 __author__ = "Damon May"
@@ -96,11 +98,11 @@ def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=Fals
                 # sometimes, a Z line will have a 0 charge. Punt on those
                 if charge is not None and charge > 0:
                     logger.debug("0 charge!")
-                    yield errorcalc.MS2Spectrum(scan_number,
-                                                retention_time,
-                                                fragment_mzs,
-                                                fragment_intensities,
-                                                precursor_mz, charge)
+                    yield parammedic.util.MS2Spectrum(scan_number,
+                                                      retention_time,
+                                                      fragment_mzs,
+                                                      fragment_intensities,
+                                                      precursor_mz, charge)
                     n_yielded += 1
                     logger.debug("Yielded #%d" % n_yielded)
                 # zero out everything not on this line so that we know if we got it for the next scan
@@ -149,11 +151,11 @@ def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=Fals
 
     if scan_number and (retention_time or not require_rt) and fragment_mzs and \
             fragment_intensities and precursor_mz and charge:
-        yield errorcalc.MS2Spectrum(scan_number,
-                                    retention_time,
-                                    fragment_mzs,
-                                    fragment_intensities,
-                                    precursor_mz, charge)
+        yield parammedic.util.MS2Spectrum(scan_number,
+                                          retention_time,
+                                          fragment_mzs,
+                                          fragment_intensities,
+                                          precursor_mz, charge)
         n_yielded += 1
     else:
         logger.debug("Tried to write scan with not all values collected")

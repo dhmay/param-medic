@@ -6,6 +6,8 @@ mzML reading
 
 import logging
 from pyteomics import mzml
+
+import parammedic.util
 from parammedic import errorcalc
 
 
@@ -70,9 +72,9 @@ def read_scan(scan):
     intensity_array = scan['intensity array']
     retention_time = scan['scanList']['scan'][0]['scan start time']
     if ms_level == 1:
-        return errorcalc.MSSpectrum(scan_number, retention_time,
-                                    mz_array,
-                                    intensity_array)
+        return parammedic.util.MSSpectrum(scan_number, retention_time,
+                                          mz_array,
+                                          intensity_array)
     elif ms_level == 2:
         precursor_selected_ion_map = scan['precursorList']['precursor'][0]['selectedIonList']['selectedIon'][0]
         precursor_mz = precursor_selected_ion_map['selected ion m/z']
@@ -84,10 +86,10 @@ def read_scan(scan):
         else:
             raise ValueError("Could not find charge for scan %d" % scan_number)
 
-        return errorcalc.MS2Spectrum(scan_number, retention_time,
-                                     mz_array,
-                                     intensity_array,
-                                     precursor_mz, charge)
+        return parammedic.util.MS2Spectrum(scan_number, retention_time,
+                                           mz_array,
+                                           intensity_array,
+                                           precursor_mz, charge)
     else:
         logger.debug("Unhandleable scan level %d" % ms_level)
 

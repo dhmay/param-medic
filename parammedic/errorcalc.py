@@ -30,10 +30,13 @@ I'll consider a rewrite.
 """
 
 import logging
-import numpy as np
 import math
-from mixturemodel import GeneralMixtureModel, NormalDistribution, UniformDistribution
 import random
+
+import numpy as np
+
+from mixturemodel import GeneralMixtureModel, NormalDistribution, UniformDistribution
+from parammedic.util import AVERAGINE_PEAK_SEPARATION
 
 __author__ = "Damon May"
 __copyright__ = "Copyright (c) 2016 Damon May"
@@ -81,8 +84,7 @@ PROPORTION_MASSBINS_MULTIPEAK_INDICATES_PROFILEMODE = 0.5
 
 # constants
 
-# Separation between Averagine peaks. This is used for binning spectra
-AVERAGINE_PEAK_SEPARATION = 1.0005079
+
 # maximum proportion of precursor delta-masses that can be 0, otherwise we give up
 MAX_PROPORTION_PRECURSORDELTAS_0 = 0.5
 # maximum peaks to use to fit a mixed distribution
@@ -95,7 +97,6 @@ PRECURSOR_SIGMA_MULTIPLIER = 37.404067
 # minimum allowed values for sigma of the estimated normal
 MIN_SIGMA_PPM = 0.01
 MIN_SIGMA_TH = 0.00001
-
 
 
 class ErrorCalculator(object):
@@ -172,11 +173,9 @@ class ErrorCalculator(object):
         self.precursor_sigma_multiplier = PRECURSOR_SIGMA_MULTIPLIER
         self.frag_sigma_multiplier = FRAG_SIGMA_MULTIPLIER
 
-        self.averagine_peak_separation = AVERAGINE_PEAK_SEPARATION
-
         # define the number and position of bins
-        self.lowest_precursorbin_startmz = self.min_precursor_mz - (self.min_precursor_mz % (self.averagine_peak_separation / self.charge))
-        self.lowest_fragmentbin_startmz = self.min_frag_mz - (self.min_frag_mz % self.averagine_peak_separation)
+        self.lowest_precursorbin_startmz = self.min_precursor_mz - (self.min_precursor_mz % (AVERAGINE_PEAK_SEPARATION / self.charge))
+        self.lowest_fragmentbin_startmz = self.min_frag_mz - (self.min_frag_mz % AVERAGINE_PEAK_SEPARATION)
         self.n_precursor_bins = self.calc_binidx_for_mz_precursor(self.max_precursor_mz) + 1
         self.n_fragment_bins = self.calc_binidx_for_mz_fragment(self.max_frag_mz) + 1
 
@@ -195,10 +194,10 @@ class ErrorCalculator(object):
     # these utility methods find the right bin for a given mz
 
     def calc_binidx_for_mz_precursor(self, mz):
-        return int(math.floor((mz - self.lowest_precursorbin_startmz) / (self.averagine_peak_separation / self.charge)))
+        return int(math.floor((mz - self.lowest_precursorbin_startmz) / (AVERAGINE_PEAK_SEPARATION / self.charge)))
 
     def calc_binidx_for_mz_fragment(self, mz):
-        return int(math.floor((mz - self.lowest_fragmentbin_startmz) / self.averagine_peak_separation))
+        return int(math.floor((mz - self.lowest_fragmentbin_startmz) / AVERAGINE_PEAK_SEPARATION))
 
     # these utility methods map an mz to its offset from the specified bin center
 
@@ -211,10 +210,10 @@ class ErrorCalculator(object):
     # these utility methods calculate the start mz values of a specified bin
 
     def calc_bin_startmz_precursor(self, bin_idx):
-        return self.lowest_precursorbin_startmz + bin_idx * (self.averagine_peak_separation / self.charge)
+        return self.lowest_precursorbin_startmz + bin_idx * (AVERAGINE_PEAK_SEPARATION / self.charge)
 
     def calc_bin_startmz_fragment(self, bin_idx):
-        return self.lowest_fragmentbin_startmz + bin_idx * self.averagine_peak_separation
+        return self.lowest_fragmentbin_startmz + bin_idx * AVERAGINE_PEAK_SEPARATION
 
     def clear_all_bins(self):
         """
@@ -284,15 +283,15 @@ class ErrorCalculator(object):
         :param current_spec_obs:
         :return:
         """
-        bin_fragment_map_prev = self.bin_fragments(prev_spec_obs)
-        bin_fragment_map_current = self.bin_fragments(current_spec_obs)
+        bin_fragment_map_prev = self.bin_topn_fragments(prev_spec_obs)
+        bin_fragment_map_current = self.bin_topn_fragments(current_spec_obs)
         result = []
         for bin_idx in bin_fragment_map_prev:
             if bin_idx in bin_fragment_map_current:
                 result.append((bin_fragment_map_prev[bin_idx], bin_fragment_map_current[bin_idx]))
         return result
 
-    def bin_fragments(self, spec_obs):
+    def bin_topn_fragments(self, spec_obs):
         """
         keep only one fragment per bin. If another fragment wants to be in the bin, toss them *both* out.
         This reduces ambiguity.
@@ -507,29 +506,3 @@ class SpectrumObservation(object):
         self.topn_fragments = topn_fragments
 
 
-class MSSpectrum(object):
-    """
-    represents a single MS spectrum
-    """
-    def __init__(self, scan_number, retention_time, level, mz_array, intensity_array):
-        assert(len(mz_array) == len(intensity_array))
-        self.scan_number = scan_number
-        self.retention_time = retention_time
-        self.mz_array = mz_array
-        self.intensity_array = intensity_array
-        self.level = level
-
-
-class MS2Spectrum(MSSpectrum):
-    """
-    represents a single MS/MS spectrum
-    """
-    def __init__(self, scan_number, retention_time, mz_array, intensity_array,
-                 precursor_mz, charge):
-        MSSpectrum.__init__(self, scan_number, retention_time, 2, mz_array, intensity_array)
-        self.precursor_mz = precursor_mz
-        self.charge = charge
-
-    def generate_mz_intensity_pairs(self):
-        for i in xrange(0, len(self.mz_array)):
-            yield(self.mz_array[i], self.intensity_array[i])
