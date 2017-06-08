@@ -9,9 +9,9 @@ detectors
 
 import logging
 import math
-from util import AVERAGINE_PEAK_SEPARATION, HYDROGEN_MASS
-import abc
 
+from parammedic.util import RunAttributeDetector
+from util import AVERAGINE_PEAK_SEPARATION, HYDROGEN_MASS
 
 __author__ = "Damon May"
 __copyright__ = "Copyright (c) 2016 Damon May"
@@ -43,31 +43,7 @@ DELTA_MASS_PHOSPHO_LOSS = 80.0
 logger = logging.getLogger(__name__)
 
 
-class ModificationDetector(object):
-    """
-    Abstract superclass for objects to detect different kinds of modifications
-    """
-    __metaclass__ = abc.ABCMeta
-
-    @abc.abstractmethod
-    def process_spectrum(self, spectrum):
-        """
-        Process a single spectrum
-        :param spectrum: 
-        :return: 
-        """
-        return
-    
-    @abc.abstractmethod
-    def summarize(self):
-        """
-        This method gets called after all spectra are processed
-        :return: 
-        """
-        return
-
-
-class PhosphoLossProportionCalculator(ModificationDetector):
+class PhosphoLossProportionCalculator(RunAttributeDetector):
     """
     Accumulates the proportion of MS/MS fragment signal that's accounted for
     by fragments representing a loss of DELTA_MASS_PHOSPHO_LOSS Da from the precursor mass
@@ -75,6 +51,13 @@ class PhosphoLossProportionCalculator(ModificationDetector):
     def __init__(self):
         self.n_total_spectra = 0
         self.sum_proportions_in_phosopholoss = 0.0
+
+    def next_file(self):
+        """
+        Register that a new file is being processed
+        :return: 
+        """
+        return
 
     def process_spectrum(self, spectrum):
         """
@@ -104,10 +87,10 @@ class PhosphoLossProportionCalculator(ModificationDetector):
         :return: 
         """
         proportion_phospholoss = self.sum_proportions_in_phosopholoss / self.n_total_spectra
-        print("Phosphorylation loss as proportion of total signal: %.03f" % proportion_phospholoss)
+        print("Phosphorylation loss as proportion of total signal: %.04f" % proportion_phospholoss)
     
 
-class ReporterIonProportionCalculator(ModificationDetector):
+class ReporterIonProportionCalculator(RunAttributeDetector):
     """
     Class that accumulates the proportion of MS/MS fragment signal that's accounted for
     by a list of reporter ion mzs.
@@ -119,6 +102,13 @@ class ReporterIonProportionCalculator(ModificationDetector):
 
         self.sum_proportions_in_bins = 0.0
         logger.debug("Reporter ion bins: %s" % str(self.reporter_ion_bins))
+
+    def next_file(self):
+        """
+        Register that a new file is being processed
+        :return: 
+        """
+        return
         
     def process_spectrum(self, spectrum):
         """
@@ -149,7 +139,7 @@ class ReporterIonProportionCalculator(ModificationDetector):
               (self.name, proportion_reporter_ions))
 
 
-class PrecursorSeparationProportionCalculator(ModificationDetector):
+class PrecursorSeparationProportionCalculator(RunAttributeDetector):
     """
     Calculate the number of pairs of spectra that are separated by 
     a given set of distances, as a proporation of all pairs of spectra.
@@ -160,6 +150,13 @@ class PrecursorSeparationProportionCalculator(ModificationDetector):
         self.spectrum_counts_in_bins = [0] * MAX_BINS_FOR_MASS
         self.highest_binidx_used = 0
         self.n_total_spectra = 0
+
+    def next_file(self):
+        """
+        Register that a new file is being processed
+        :return: 
+        """
+        return
 
     def process_spectrum(self, spectrum):
         """

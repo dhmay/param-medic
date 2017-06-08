@@ -4,6 +4,8 @@ Utility code used by multiple modules
 """
 
 # Separation between Averagine peaks. This is used for binning spectra
+import abc
+
 AVERAGINE_PEAK_SEPARATION = 1.0005079
 
 # mass of a hydrogen atom
@@ -36,3 +38,34 @@ class MS2Spectrum(MSSpectrum):
         for i in xrange(0, len(self.mz_array)):
             yield(self.mz_array[i], self.intensity_array[i])
 
+
+class RunAttributeDetector(object):
+    """
+    Abstract superclass for objects to detect different kinds of attributes of runs
+    """
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def process_spectrum(self, spectrum):
+        """
+        Process a single spectrum
+        :param spectrum: 
+        :return: 
+        """
+        return
+    
+    @abc.abstractmethod
+    def summarize(self):
+        """
+        This method gets called after all spectra are processed
+        :return: 
+        """
+        return
+    
+    @abc.abstractmethod
+    def next_file(self):
+        """
+        Register that a new file is being processed
+        :return: 
+        """
+        return

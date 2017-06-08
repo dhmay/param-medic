@@ -32,6 +32,7 @@ I'll consider a rewrite.
 import logging
 import math
 import random
+from util import RunAttributeDetector
 
 import numpy as np
 
@@ -99,7 +100,7 @@ MIN_SIGMA_PPM = 0.01
 MIN_SIGMA_TH = 0.00001
 
 
-class ErrorCalculator(object):
+class ErrorCalculator(RunAttributeDetector):
     """
     Class that accumulates pairs of precursors and fragments and uses them to estimate mass error.
     """
@@ -174,7 +175,7 @@ class ErrorCalculator(object):
         self.frag_sigma_multiplier = FRAG_SIGMA_MULTIPLIER
 
         # define the number and position of bins
-        self.lowest_precursorbin_startmz = self.min_precursor_mz - (self.min_precursor_mz % (AVERAGINE_PEAK_SEPARATION / self.charge))
+        self.lowest_precursorbin_startmz = self.min_precursor_mz - (self.min_precursor_mz % ( AVERAGINE_PEAK_SEPARATION / self.charge))
         self.lowest_fragmentbin_startmz = self.min_frag_mz - (self.min_frag_mz % AVERAGINE_PEAK_SEPARATION)
         self.n_precursor_bins = self.calc_binidx_for_mz_precursor(self.max_precursor_mz) + 1
         self.n_fragment_bins = self.calc_binidx_for_mz_fragment(self.max_frag_mz) + 1
@@ -467,6 +468,45 @@ class ErrorCalculator(object):
         return (failed_precursor, precursor_message, failed_fragment, fragment_message,
                 precursor_sigma_ppm, frag_sigma_ppm,
                 precursor_prediction_ppm, fragment_prediction_th)
+
+    def summarize(self):
+        (failed_precursor, precursor_message, failed_fragment, fragment_message, precursor_sigma_ppm, frag_sigma_ppm,
+         precursor_prediction_ppm, fragment_prediction_th) = \
+            self.calc_masserror_dist()
+        if not failed_precursor:
+            logger.debug('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
+        if not failed_fragment:
+            logger.debug('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
+        logger.debug('')
+
+        most_common_charge = 0
+        n_with_mostcommon_charge = 0
+        for charge in self.charge_spectracount_map:
+            if self.charge_spectracount_map[charge] > n_with_mostcommon_charge:
+                n_with_mostcommon_charge = self.charge_spectracount_map[charge]
+                most_common_charge = charge
+        print('most common MS/MS scan charge: %d' % most_common_charge)
+        if failed_precursor:
+            print('ERROR: failed to calculate precursor error:')
+            print(precursor_message)
+        else:
+            print('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
+            print("Precursor error estimate (ppm): %.2f" % precursor_prediction_ppm)
+        print('')
+        if failed_fragment:
+            print('ERROR: failed to calculate fragment error:')
+            print(fragment_message)
+        else:
+            print('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
+            print("Fragment bin size estimate (Th): %.4f" % fragment_prediction_th)
+
+    def next_file(self):
+        """
+        Register that a new file is being processed.
+        clear the bins so we don't end up using pairs across files
+        :return: 
+        """
+        self.clear_all_bins()
 
 
 def estimate_mu_sigma(data, min_sigma):
