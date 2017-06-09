@@ -93,15 +93,21 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
 class ReporterIonProportionCalculator(RunAttributeDetector):
     """
     Class that accumulates the proportion of MS/MS fragment signal that's accounted for
-    by a list of reporter ion mzs.
+    by a list of reporter ion mzs for each of multiple types.
     """
-    def __init__(self, name, reporter_ion_mzs):
-        self.name = name
+    def __init__(self, reporter_ion_type_mzs_map):
         self.n_total_spectra = 0
-        self.reporter_ion_bins = set([calc_binidx_for_mz_fragment(mz) for mz in reporter_ion_mzs])
+        # map from reporter type to the bins representing that type
+        self.reporter_ion_type_bins_map = {}
+        # map from reporter type to sum of proportions of fragment ion intensities in bins for that type
+        self.reportertype_sum_proportion_map = {}
+        for reporter_ion_type in reporter_ion_type_mzs_map:
+            self.reporter_ion_type_bins_map[reporter_ion_type] = []
+            for mz in reporter_ion_type_mzs_map[reporter_ion_type]:
+                self.reporter_ion_type_bins_map[reporter_ion_type].append(calc_binidx_for_mz_fragment(mz))
+            self.reportertype_sum_proportion_map[reporter_ion_type] = 0.0
 
-        self.sum_proportions_in_bins = 0.0
-        logger.debug("Reporter ion bins: %s" % str(self.reporter_ion_bins))
+        logger.debug("Reporter ion type count: %d" % len(self.reporter_ion_type_bins_map))
 
     def next_file(self):
         """
@@ -112,21 +118,31 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
         
     def process_spectrum(self, spectrum):
         """
-        Handle a spectrum. Check its charge and its number of scans. If passes, find the right
-        bin for the precursor. If there's a previous scan in that bin, check to see if we've got
-        a pair; if so, record all the peak pair info. Regardless, put the new scan in the bin.
+        Process a single spectrum, checking all fragment mzs against the lists of 
+        mzs for each reporter type
         :param spectrum:
         :return:
         """
-        # accounting:
+        # accounting
         self.n_total_spectra += 1
-        signal_in_bin = 0.0
         signal_total = 0.0
+        reportertype_signalsum_map_this_spectrum = {}
+        # construct a temporary map from reporter type to sum of signal in this spectrum for that type.
+        # I could make this a class variable and just zero it out each time.
+        for reporter_type in self.reporter_ion_type_bins_map:
+            reportertype_signalsum_map_this_spectrum[reporter_type] = 0.0
         for i in xrange(0, len(spectrum.mz_array)):
-            if calc_binidx_for_mz_fragment(spectrum.mz_array[i]) in self.reporter_ion_bins:
-                signal_in_bin += spectrum.intensity_array[i]
+            mz_bin = calc_binidx_for_mz_fragment(spectrum.mz_array[i])
+            intensity_i = spectrum.intensity_array[i]
+            # for each reporter type, check if the mz_bin is one of the bins for that type.
+            # if so, add this peak's intensity to the sum for that type.
+            for reporter_type in self.reporter_ion_type_bins_map:
+                if mz_bin in self.reporter_ion_type_bins_map[reporter_type]:
+                    reportertype_signalsum_map_this_spectrum[reporter_type] += intensity_i
             signal_total += spectrum.intensity_array[i]
-        self.sum_proportions_in_bins += (signal_in_bin / signal_total)
+        for reporter_type in reportertype_signalsum_map_this_spectrum:
+            proportion_this_type = reportertype_signalsum_map_this_spectrum[reporter_type] / signal_total
+            self.reportertype_sum_proportion_map[reporter_type] += proportion_this_type
 
     def summarize(self):
         """
@@ -134,9 +150,12 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
         all spectra
         :return: 
         """
-        proportion_reporter_ions = self.sum_proportions_in_bins / self.n_total_spectra
-        print("%s reporter ions as proportion of total signal: %.03f" % 
-              (self.name, proportion_reporter_ions))
+        for reporter_type in self.reportertype_sum_proportion_map:
+            # divide the sum of proportions of signals in ions for this reporter type
+            # by 1.0 * the total number of spectra considered
+            proportion_reporter_ions = self.reportertype_sum_proportion_map[reporter_type] / self.n_total_spectra
+            print("%s: proportion of total signal: %.03f" %
+                  (reporter_type, proportion_reporter_ions))
 
 
 class PrecursorSeparationProportionCalculator(RunAttributeDetector):
