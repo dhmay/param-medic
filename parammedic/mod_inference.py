@@ -9,6 +9,7 @@ detectors
 
 import logging
 import math
+import numpy as np
 
 from parammedic.util import RunAttributeDetector
 from util import AVERAGINE_PEAK_SEPARATION, HYDROGEN_MASS
@@ -38,6 +39,7 @@ MAX_BINS_FOR_MASS = 20000
 
 # delta mass representing a loss of phosphorylation
 DELTA_MASS_PHOSPHO_LOSS = 80.0
+
 
 
 logger = logging.getLogger(__name__)
@@ -163,11 +165,16 @@ class PrecursorSeparationProportionCalculator(RunAttributeDetector):
     Calculate the number of pairs of spectra that are separated by 
     a given set of distances, as a proporation of all pairs of spectra.
     """
+    # bin distances to use for comparison. Param-Medic assumes there won't be any
+    # excessive pairing of precursors at these mass distances
+    CONTROL_BIN_DISTANCES = [11, 14, 15, 21, 23, 27]
+    MAX_SCAN_SEPARATION = 50
+
     def __init__(self, name, separation_bin_distances):
         self.name = name
         self.bin_distances = separation_bin_distances
-        self.spectrum_counts_in_bins = [0] * MAX_BINS_FOR_MASS
-        self.highest_binidx_used = 0
+        self.scan_numbers = []
+        self.precursor_mass_bins = []
         self.n_total_spectra = 0
 
     def next_file(self):
@@ -183,13 +190,10 @@ class PrecursorSeparationProportionCalculator(RunAttributeDetector):
         :return: 
         """
         self.n_total_spectra += 1
+        self.scan_numbers.append(spectrum.scan_number)
         precursor_mass = calc_mplush_from_mz_charge(spectrum.precursor_mz, spectrum.charge)
         binidx = calc_binidx_for_mass_precursor(precursor_mass)
-        self.highest_binidx_used = max(self.highest_binidx_used, binidx)
-        if binidx > len(self.spectrum_counts_in_bins):
-            logger.debug("Got a very high precursor mass! %f" % precursor_mass)
-            return
-        self.spectrum_counts_in_bins[binidx] += 1
+        self.precursor_mass_bins.append(binidx)
 
     def summarize(self):
         """
@@ -199,30 +203,43 @@ class PrecursorSeparationProportionCalculator(RunAttributeDetector):
         """
         # map from separation distances to counts of pairs with that separation
         counts_with_separations = {}
-        for bin_distance in self.bin_distances:
-            counts_with_separations[bin_distance] = 0
-        for i in xrange(0, self.highest_binidx_used - min(self.bin_distances)):
-            count_this_bin = self.spectrum_counts_in_bins[i]
-            if count_this_bin == 0:
-                continue
-            for bin_distance in self.bin_distances:
-                bin_up = i + bin_distance
-                if bin_up < len(self.spectrum_counts_in_bins):
-                    count_other_bin = self.spectrum_counts_in_bins[bin_up]
-                    counts_with_separations[bin_distance] += count_this_bin * count_other_bin
-        proportions_with_separations = {}
-        n_total_pairs = self.n_total_spectra * (self.n_total_spectra - 1) / 2
-        logger.debug("summarize(): n_total_spectra=%d, n_total_pairs=%d" % (self.n_total_spectra, n_total_pairs))
-        for bin_distance in self.bin_distances:
-            proportions_with_separations[bin_distance] = float(counts_with_separations[bin_distance]) / n_total_pairs
-            logger.debug("count with separation %d: %d" % (bin_distance, counts_with_separations[bin_distance]))
-        overall_proportion = sum(proportions_with_separations.values())
-        print("%s: proportion of precursor pairs with appropriate separation: overall=%.05f" %
-              (self.name, overall_proportion))
-        for bin_distance in self.bin_distances:
-            print("    proportion with separation %dDa: %.05f" %
-                  (bin_distance, proportions_with_separations[bin_distance]))
-
+        separations_to_evaluate = set(self.bin_distances + PrecursorSeparationProportionCalculator.CONTROL_BIN_DISTANCES)
+        if len(separations_to_evaluate) < len(self.bin_distances) + len(PrecursorSeparationProportionCalculator.CONTROL_BIN_DISTANCES):
+            logger.warn("A specified separation is also a control separation! Specified: %s" % str(self.bin_distances))
+        for separation in separations_to_evaluate:
+            counts_with_separations[separation] = 0
+        
+        minidx = 0
+        maxidx = 0
+        for i in xrange(0, len(self.scan_numbers)):
+            scan_number = self.scan_numbers[i]
+            min_scan_number = scan_number - PrecursorSeparationProportionCalculator.MAX_SCAN_SEPARATION
+            max_scan_number = scan_number + PrecursorSeparationProportionCalculator.MAX_SCAN_SEPARATION
+            while self.scan_numbers[minidx] < min_scan_number:
+                minidx += 1
+            while self.scan_numbers[maxidx] < max_scan_number and maxidx < len(self.scan_numbers) - 1:
+                maxidx += 1
+            for j in xrange(minidx, maxidx):
+                separation = abs(self.precursor_mass_bins[i] - self.precursor_mass_bins[j])
+                if separation in separations_to_evaluate:
+                    counts_with_separations[separation] += 1
+        mean_control_count = (float(sum([counts_with_separations[separation] for separation in
+                                    PrecursorSeparationProportionCalculator.CONTROL_BIN_DISTANCES])) /
+                               len(PrecursorSeparationProportionCalculator.CONTROL_BIN_DISTANCES))
+        logger.debug("Control separation counts:")
+        for separation in PrecursorSeparationProportionCalculator.CONTROL_BIN_DISTANCES:
+            logger.debug("  %d: %d" % (separation, counts_with_separations[separation]))
+        logger.debug("Mean control separation count: %.05f" % mean_control_count)
+        logger.debug("Counts of interest:")
+        for separation in self.bin_distances:
+            proportion_to_control = float(counts_with_separations[separation]) / mean_control_count
+            logger.debug("  %d: %d (proportion=%.05f)" % (separation, counts_with_separations[separation], proportion_to_control))
+        print("Ratios of %s mass separations to control separations:" % (self.name))
+        control_sd = np.std([counts_with_separations[separation] for separation in PrecursorSeparationProportionCalculator.CONTROL_BIN_DISTANCES])
+        for separation in self.bin_distances:
+            proportion_to_control = float(counts_with_separations[separation]) / mean_control_count
+            zscore_to_control = float(counts_with_separations[separation] - mean_control_count) / control_sd
+            print("    %dDa: %.05f (z=%.03f)" % (separation, proportion_to_control, zscore_to_control))
 
 # utility methods
 
