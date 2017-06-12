@@ -21,6 +21,7 @@ __license__ = "Apache 2.0"
 logger = logging.getLogger(__name__)
 SPECTRUM_PROCESSED_REPORT_INTERVAL = 1000
 
+
 def declare_gather_args():
     """
     Declare all arguments, parse them, and return the args dict.
@@ -81,6 +82,9 @@ def declare_gather_args():
 
     parser.add_argument('--debug', action="store_true", help='Enable debug logging')
     parser.add_argument('--version', action='version', version='%(prog)s {version}'.format(version=__version__))
+
+    # these parameters are for development
+    parser.add_argument('--maxspectra', type=int, help='Maximum spectra to process')
 
     return parser.parse_args()
 
@@ -170,9 +174,14 @@ def main():
         for spectrum in generate_spectra(infile):
             if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
                 logger.debug("  processed %d total spectra..." % n_spectra_processed)
-            n_spectra_processed += 1
             for run_attribute_detector in run_attribute_detectors:
                 run_attribute_detector.process_spectrum(spectrum)
+            n_spectra_processed += 1
+            if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
+                logger.info("Stopping early after %d spectra." % n_spectra_processed)
+                break
+        if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
+            break
 
     print("Processed all spectra. Summarizing...")
     for run_attribute_detector in run_attribute_detectors:
