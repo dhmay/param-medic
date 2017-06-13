@@ -34,12 +34,22 @@ DEFAULT_TMT_REPORTERION_MZS = [126.0, 127.0, 128.0, 129.0, 130.0, 131.0]
 ITRAQ_4PLEX_REPORTERION_MZS = [114.0, 115.0, 116.0, 117.0]
 ITRAQ_8PLEX_REPORTERION_MZS = [113.0, 114.0, 115.0, 116.0, 117.0, 118.0, 119.0, 121.0]
 
+# control m/z values to compare with reporter ion groups. These occur below,
+# between and above the different groups of reporter ions.
+REPORTER_ION_CONTROL_MZS = [111.0, 112.0,  # below
+                            122.0, 123.0, 124.0, 125.0,  # between
+                            132.0, 133.0]  # above
+
 # number of bins to keep track of for mass. Approximates maximum precursor mass considered
 MAX_BINS_FOR_MASS = 20000
 
 # delta mass representing a loss of phosphorylation
-DELTA_MASS_PHOSPHO_LOSS = 80.0
-
+# Phospho is lost as (H3PO4, -98Da), according to Villen:
+#http://faculty.washington.edu/jvillen/wordpress/wp-content/uploads/2016/04/Beausoleil_PNAS_04.pdf
+DELTA_MASS_PHOSPHO_LOSS = 98.0
+# offsets from the phospho peak to use as control peaks.
+# Don't use 1 or 2 above the phospho peak, because could be M+1 and M+2 peaks for the phospho peak
+PHOSPHO_CONTROLPEAK_PHOSPHOPEAK_OFFSETS = [-4, -3, -2, -1, 3, 4, 5, 6]
 
 
 logger = logging.getLogger(__name__)
@@ -53,6 +63,10 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
     def __init__(self):
         self.n_total_spectra = 0
         self.sum_proportions_in_phosopholoss = 0.0
+        # map from offset from phospho loss bin to sum of proportion
+        self.sums_proportions_per_controlpeak = {}
+        for offset in PHOSPHO_CONTROLPEAK_PHOSPHOPEAK_OFFSETS:
+            self.sums_proportions_per_controlpeak[offset] = 0.0
 
     def next_file(self):
         """
@@ -72,15 +86,19 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         self.n_total_spectra += 1
         precursor_mass = calc_mplush_from_mz_charge(spectrum.precursor_mz, spectrum.charge)
         phospho_loss_mass = precursor_mass - DELTA_MASS_PHOSPHO_LOSS
-        phospho_loss_charge1_mz = calc_mz_from_mplush_charge(phospho_loss_mass, 1)
+        # look in same charge as precursor, because phospho loss is neutral
+        phospho_loss_charge1_mz = calc_mz_from_mplush_charge(phospho_loss_mass, spectrum.charge)
         phospho_loss_bin = calc_binidx_for_mz_fragment(phospho_loss_charge1_mz)
-        signal_in_bin = 0.0
-        signal_total = 0.0
+        control_bins = []
+        signal_total = sum(spectrum.intensity_array)
+        for offset in PHOSPHO_CONTROLPEAK_PHOSPHOPEAK_OFFSETS:
+            control_bins.append(phospho_loss_bin + offset)
         for i in xrange(0, len(spectrum.mz_array)):
-            if calc_binidx_for_mz_fragment(spectrum.mz_array[i]) == phospho_loss_bin:
-                signal_in_bin += spectrum.intensity_array[i]
-            signal_total += spectrum.intensity_array[i]
-        self.sum_proportions_in_phosopholoss += (signal_in_bin / signal_total)
+            frag_binidx = calc_binidx_for_mz_fragment(spectrum.mz_array[i])
+            if frag_binidx == phospho_loss_bin:
+                self.sum_proportions_in_phosopholoss += spectrum.intensity_array[i] / signal_total
+            elif frag_binidx in control_bins:
+                self.sums_proportions_per_controlpeak[frag_binidx - phospho_loss_bin] += (spectrum.intensity_array[i] / signal_total)
 
     def summarize(self):
         """
@@ -88,9 +106,13 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         all spectra
         :return: 
         """
-        proportion_phospholoss = self.sum_proportions_in_phosopholoss / self.n_total_spectra
-        print("Phosphorylation loss as proportion of total signal: %.04f" % proportion_phospholoss)
-    
+        control_mean = np.mean(self.sums_proportions_per_controlpeak.values())
+        control_sd = np.std(self.sums_proportions_per_controlpeak.values())
+        proportion_to_control = self.sum_proportions_in_phosopholoss / control_mean
+        zscore_to_control = (self.sum_proportions_in_phosopholoss - control_mean) / control_sd
+        print("Phospho: ratio phospho-loss to control peaks: %.05f (z=%.03f)" % (proportion_to_control, zscore_to_control))
+
+
 
 class ReporterIonProportionCalculator(RunAttributeDetector):
     """
