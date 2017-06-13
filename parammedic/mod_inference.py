@@ -10,6 +10,7 @@ detectors
 import logging
 import math
 import numpy as np
+from scipy.stats import ttest_ind
 
 from parammedic.util import RunAttributeDetector
 from util import AVERAGINE_PEAK_SEPARATION, HYDROGEN_MASS
@@ -32,13 +33,14 @@ DEFAULT_SILAC_MOD_BIN_DISTANCES = [4, 6, 8]
 
 DEFAULT_TMT_REPORTERION_MZS = [126.0, 127.0, 128.0, 129.0, 130.0, 131.0]
 ITRAQ_4PLEX_REPORTERION_MZS = [114.0, 115.0, 116.0, 117.0]
-ITRAQ_8PLEX_REPORTERION_MZS = [113.0, 114.0, 115.0, 116.0, 117.0, 118.0, 119.0, 121.0]
+# the iTRAQ 8-plex reporter ion m/zs that are NOT in the 4plex ion list
+ITRAQ_8PLEX_REPORTERION_MZS = [117.0, 118.0, 119.0, 121.0]
 
 # control m/z values to compare with reporter ion groups. These occur below,
 # between and above the different groups of reporter ions.
 REPORTER_ION_CONTROL_MZS = [111.0, 112.0,  # below
-                            122.0, 123.0, 124.0, 125.0,  # between
-                            132.0, 133.0]  # above
+                            120.0, 122.0, 123.0, 124.0, 125.0,  # between
+                            133.0, 134.0]  # above
 
 # number of bins to keep track of for mass. Approximates maximum precursor mass considered
 MAX_BINS_FOR_MASS = 20000
@@ -113,7 +115,6 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         print("Phospho: ratio phospho-loss to control peaks: %.05f (z=%.03f)" % (proportion_to_control, zscore_to_control))
 
 
-
 class ReporterIonProportionCalculator(RunAttributeDetector):
     """
     Class that accumulates the proportion of MS/MS fragment signal that's accounted for
@@ -124,14 +125,24 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
         # map from reporter type to the bins representing that type
         self.reporter_ion_type_bins_map = {}
         # map from reporter type to sum of proportions of fragment ion intensities in bins for that type
-        self.reportertype_sum_proportion_map = {}
+        self.reportertype_bin_sum_proportion_map = {}
+
+        # note: doctoring reporter_ion_type_mzs_map. Shouldn't be relied upon not to have changed.
+        reporter_ion_type_mzs_map['control'] = REPORTER_ION_CONTROL_MZS
+
+        # set of all the bins we're considering, for a simple check to see if
+        # a peak is in one
+        self.all_bins_considered = set()
         for reporter_ion_type in reporter_ion_type_mzs_map:
             self.reporter_ion_type_bins_map[reporter_ion_type] = []
+            self.reportertype_bin_sum_proportion_map[reporter_ion_type] = {}
             for mz in reporter_ion_type_mzs_map[reporter_ion_type]:
-                self.reporter_ion_type_bins_map[reporter_ion_type].append(calc_binidx_for_mz_fragment(mz))
-            self.reportertype_sum_proportion_map[reporter_ion_type] = 0.0
+                binidx = calc_binidx_for_mz_fragment(mz)
+                self.all_bins_considered.add(binidx)
+                self.reporter_ion_type_bins_map[reporter_ion_type].append(binidx)
+                self.reportertype_bin_sum_proportion_map[reporter_ion_type][binidx] = 0.0
 
-        logger.debug("Reporter ion type count: %d" % len(self.reporter_ion_type_bins_map))
+        logger.debug("Reporter ion type count (including control): %d" % len(self.reporter_ion_type_bins_map))
 
     def next_file(self):
         """
@@ -149,24 +160,16 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
         """
         # accounting
         self.n_total_spectra += 1
-        signal_total = 0.0
-        reportertype_signalsum_map_this_spectrum = {}
-        # construct a temporary map from reporter type to sum of signal in this spectrum for that type.
-        # I could make this a class variable and just zero it out each time.
-        for reporter_type in self.reporter_ion_type_bins_map:
-            reportertype_signalsum_map_this_spectrum[reporter_type] = 0.0
+        signal_total = sum(spectrum.intensity_array)
         for i in xrange(0, len(spectrum.mz_array)):
             mz_bin = calc_binidx_for_mz_fragment(spectrum.mz_array[i])
-            intensity_i = spectrum.intensity_array[i]
-            # for each reporter type, check if the mz_bin is one of the bins for that type.
-            # if so, add this peak's intensity to the sum for that type.
-            for reporter_type in self.reporter_ion_type_bins_map:
-                if mz_bin in self.reporter_ion_type_bins_map[reporter_type]:
-                    reportertype_signalsum_map_this_spectrum[reporter_type] += intensity_i
-            signal_total += spectrum.intensity_array[i]
-        for reporter_type in reportertype_signalsum_map_this_spectrum:
-            proportion_this_type = reportertype_signalsum_map_this_spectrum[reporter_type] / signal_total
-            self.reportertype_sum_proportion_map[reporter_type] += proportion_this_type
+            if mz_bin in self.all_bins_considered:
+                intensity_i = spectrum.intensity_array[i]
+                # for each reporter type, check if the mz_bin is one of the bins for that type.
+                # if so, add this peak's intensity to the sum for that type.
+                for reporter_type in self.reporter_ion_type_bins_map:
+                    if mz_bin in self.reporter_ion_type_bins_map[reporter_type]:
+                        self.reportertype_bin_sum_proportion_map[reporter_type][mz_bin] += intensity_i / signal_total
 
     def summarize(self):
         """
@@ -174,12 +177,31 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
         all spectra
         :return: 
         """
-        for reporter_type in self.reportertype_sum_proportion_map:
-            # divide the sum of proportions of signals in ions for this reporter type
-            # by 1.0 * the total number of spectra considered
-            proportion_reporter_ions = self.reportertype_sum_proportion_map[reporter_type] / self.n_total_spectra
-            print("%s: proportion of total signal: %.03f" %
-                  (reporter_type, proportion_reporter_ions))
+        control_bin_sums = self.reportertype_bin_sum_proportion_map['control'].values()
+        control_bin_mean = np.mean(control_bin_sums)
+        control_bin_sd = np.std(control_bin_sums)
+        logger.debug("Reporter ion control bin sums:")
+        for control_bin in sorted(self.reportertype_bin_sum_proportion_map['control']):
+            # adding 1 to bin number to convert from zero-based index
+            logger.debug("  %d: %.02f" % (control_bin + 1, self.reportertype_bin_sum_proportion_map['control'][control_bin]))
+        logger.debug("Reporter ion control bin mean: %.02f" % control_bin_mean)
+        for reporter_type in self.reportertype_bin_sum_proportion_map:
+            if reporter_type == 'control':
+                continue
+            reporter_bin_sums = self.reportertype_bin_sum_proportion_map[reporter_type].values()
+            reporter_bin_mean = np.mean(reporter_bin_sums)
+            print("%s, individual ions:" % reporter_type)
+            for reporter_bin in sorted(self.reportertype_bin_sum_proportion_map[reporter_type]):
+                bin_sum = self.reportertype_bin_sum_proportion_map[reporter_type][reporter_bin]
+                zscore = (bin_sum - control_bin_mean) / control_bin_sd
+                # adding 1 to bin number to convert from zero-based index
+                print("    %s, mz=%d: ratio=%.02f, zscore=%.02f" % (reporter_type, reporter_bin + 1,
+                                                                     bin_sum / control_bin_mean, zscore))
+            logger.debug("%s bin mean: %.02f" % (reporter_type, reporter_bin_mean))
+            t_statistic = ttest_ind(reporter_bin_sums, control_bin_sums, equal_var=False)
+            ratio = reporter_bin_mean / control_bin_mean
+            print("%s, overall: reporter/control mean ratio: %.04f. t-statistic: %.04f" %
+                  (reporter_type, ratio, t_statistic[0]))
 
 
 class PrecursorSeparationProportionCalculator(RunAttributeDetector):
