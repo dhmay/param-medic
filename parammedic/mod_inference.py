@@ -391,7 +391,7 @@ class SILACDetector(RunAttributeDetector):
                                                                zscore_to_control))
 
         if not significant_separations:
-            print("SILAC: no labeling detected.")
+            print("SILAC: no labeling detected")
         else:
             # 6Da separation is not compatible with 4Da and 8Da
             if 6 in significant_separations and len(significant_separations) > 1:
