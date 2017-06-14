@@ -20,6 +20,8 @@ __copyright__ = "Copyright (c) 2016 Damon May"
 __license__ = ""
 __version__ = ""
 
+# SILAC constants
+
 # default distances between precursors to check for SILAC labeling
 # 6Da rationale:
 # 13C6 L-Lysine is a stable isotope of 12C6 L-Lysine and is 6 Da heavier than 12C6 L-Lysine.
@@ -28,19 +30,39 @@ __version__ = ""
 # For lysine three-plex experiments, 4,4,5,5-D4 L-lysine and 13C6 15N2 L-lysine are used to
 # generate peptides with 4- and 8-Da mass shifts, respectively, compared to peptides generated
 # with light lysine.
-DEFAULT_SILAC_MOD_BIN_DISTANCES = [4, 6, 8]
+SILAC_MOD_BIN_DISTANCES = [4, 6, 8]
+# z-score cutoff above which we consider a particular SILAC separation to be present
+SILAC_ZSCORE_CUTOFF = 6.0
 
 
-DEFAULT_TMT_REPORTERION_MZS = [126.0, 127.0, 128.0, 129.0, 130.0, 131.0]
+# TMT constants
+
+TMT_2PLEX_REPORTERION_MZS = [126.0, 127.0]
+# the TMT 6-plex reporter ion m/zs that are NOT in the 4plex ion list
+TMT_6PLEXONLY_REPORTERION_MZS = [128.0, 129.0, 130.0, 131.0]
 ITRAQ_4PLEX_REPORTERION_MZS = [114.0, 115.0, 116.0, 117.0]
 # the iTRAQ 8-plex reporter ion m/zs that are NOT in the 4plex ion list
-ITRAQ_8PLEX_REPORTERION_MZS = [117.0, 118.0, 119.0, 121.0]
+ITRAQ_8PLEXONLY_REPORTERION_MZS = [117.0, 118.0, 119.0, 121.0]
 
 # control m/z values to compare with reporter ion groups. These occur below,
 # between and above the different groups of reporter ions.
 REPORTER_ION_CONTROL_MZS = [111.0, 112.0,  # below
                             120.0, 122.0, 123.0, 124.0, 125.0,  # between
                             133.0, 134.0]  # above
+REPORTER_ION_TYPES = ["TMT_6plex", "iTRAQ_4plex", "iTRAQ_8plex"]
+
+# map from reporter ion type to the mzs of that class of reporters
+REPORTER_ION_TYPE_MZS_MAP = {
+    "TMT_2plex": TMT_2PLEX_REPORTERION_MZS,
+    "TMT_6plex": TMT_6PLEXONLY_REPORTERION_MZS,
+    "iTRAQ_4plex": ITRAQ_4PLEX_REPORTERION_MZS,
+    "iTRAQ_8plex": ITRAQ_8PLEXONLY_REPORTERION_MZS,
+    "control": REPORTER_ION_CONTROL_MZS
+}
+
+# z-score cutoff above which we consider a particular reporter ion to be present
+REPORTER_ION_ZSCORE_CUTOFF = 7.0
+
 
 # number of bins to keep track of for mass. Approximates maximum precursor mass considered
 MAX_BINS_FOR_MASS = 20000
@@ -48,10 +70,31 @@ MAX_BINS_FOR_MASS = 20000
 # delta mass representing a loss of phosphorylation
 # Phospho is lost as (H3PO4, -98Da), according to Villen:
 #http://faculty.washington.edu/jvillen/wordpress/wp-content/uploads/2016/04/Beausoleil_PNAS_04.pdf
-DELTA_MASS_PHOSPHO_LOSS = 98.0
+DELTA_MASS_PHOSPHO_LOSS = -98.0
 # offsets from the phospho peak to use as control peaks.
 # Don't use 1 or 2 above the phospho peak, because could be M+1 and M+2 peaks for the phospho peak
 PHOSPHO_CONTROLPEAK_PHOSPHOPEAK_OFFSETS = [-4, -3, -2, -1, 3, 4, 5, 6]
+
+# z-score cutoff above which we consider phosphorylation to be present
+PHOSPHO_ZSCORE_CUTOFF = 17.0
+
+# modification masses for different reagents are from www.unimod.org
+# iTRAQ 8plex mass is the preferred mass to use when quantifying all ions
+# http://www.unimod.org/modifications_view.php?editid1=730
+SEARCH_MOD_MASS_ITRAQ_8PLEX = 304.205360
+# http://www.unimod.org/modifications_view.php?editid1=738
+SEARCH_MOD_MASS_TMT_2PLEX = 225.155833
+# http://www.unimod.org/modifications_view.php?editid1=737
+SEARCH_MOD_MASS_TMT_6PLEX = 229.162932
+# http://www.unimod.org/modifications_view.php?editid1=481
+SEARCH_MOD_MASS_SILAC_4DA = 4.0246
+# http://www.unimod.org/modifications_view.php?editid1=188
+SEARCH_MOD_MASS_SILAC_6DA = 6.020129
+# http://www.unimod.org/modifications_view.php?editid1=259
+SEARCH_MOD_MASS_SILAC_8DA = 8.014199
+# http://www.unimod.org/modifications_view.php?editid1=21
+SEARCH_MOD_MASS_PHOSPHO = 79.966331
+
 
 
 logger = logging.getLogger(__name__)
@@ -112,7 +155,13 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         control_sd = np.std(self.sums_proportions_per_controlpeak.values())
         proportion_to_control = self.sum_proportions_in_phosopholoss / control_mean
         zscore_to_control = (self.sum_proportions_in_phosopholoss - control_mean) / control_sd
-        print("Phospho: ratio phospho-loss to control peaks: %.05f (z=%.03f)" % (proportion_to_control, zscore_to_control))
+        logger.debug("Phospho: ratio phospho-loss to control peaks: %.05f (z=%.03f)" % (proportion_to_control, zscore_to_control))
+        if zscore_to_control > PHOSPHO_ZSCORE_CUTOFF:
+            print("Phosphorylation: detected")
+            return ["%f variable precursor modification" % SEARCH_MOD_MASS_PHOSPHO]
+        else:
+            print("Phosphorylation: not detected")
+            return []
 
 
 class ReporterIonProportionCalculator(RunAttributeDetector):
@@ -120,23 +169,27 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
     Class that accumulates the proportion of MS/MS fragment signal that's accounted for
     by a list of reporter ion mzs for each of multiple types.
     """
-    def __init__(self, reporter_ion_type_mzs_map):
+
+    # minimum number of ions within a given type that must have significant z-scores
+    # in order to consider that ion type present.
+    # If a nonzero smaller number are present, an info message will be displayed.
+    N_SIGNIF_IONS_IN_TYPE_REQUIRED = 2
+
+    def __init__(self):
+
         self.n_total_spectra = 0
         # map from reporter type to the bins representing that type
         self.reporter_ion_type_bins_map = {}
         # map from reporter type to sum of proportions of fragment ion intensities in bins for that type
         self.reportertype_bin_sum_proportion_map = {}
 
-        # note: doctoring reporter_ion_type_mzs_map. Shouldn't be relied upon not to have changed.
-        reporter_ion_type_mzs_map['control'] = REPORTER_ION_CONTROL_MZS
-
         # set of all the bins we're considering, for a simple check to see if
         # a peak is in one
         self.all_bins_considered = set()
-        for reporter_ion_type in reporter_ion_type_mzs_map:
+        for reporter_ion_type in REPORTER_ION_TYPE_MZS_MAP:
             self.reporter_ion_type_bins_map[reporter_ion_type] = []
             self.reportertype_bin_sum_proportion_map[reporter_ion_type] = {}
-            for mz in reporter_ion_type_mzs_map[reporter_ion_type]:
+            for mz in REPORTER_ION_TYPE_MZS_MAP[reporter_ion_type]:
                 binidx = calc_binidx_for_mz_fragment(mz)
                 self.all_bins_considered.add(binidx)
                 self.reporter_ion_type_bins_map[reporter_ion_type].append(binidx)
@@ -185,26 +238,65 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             # adding 1 to bin number to convert from zero-based index
             logger.debug("  %d: %.02f" % (control_bin + 1, self.reportertype_bin_sum_proportion_map['control'][control_bin]))
         logger.debug("Reporter ion control bin mean: %.02f" % control_bin_mean)
+        significant_reporter_types = set()
         for reporter_type in self.reportertype_bin_sum_proportion_map:
             if reporter_type == 'control':
                 continue
+            n_signif_ions_this_type = 0
             reporter_bin_sums = self.reportertype_bin_sum_proportion_map[reporter_type].values()
             reporter_bin_mean = np.mean(reporter_bin_sums)
-            print("%s, individual ions:" % reporter_type)
+            logger.debug("%s, individual ions:" % reporter_type)
             for reporter_bin in sorted(self.reportertype_bin_sum_proportion_map[reporter_type]):
                 bin_sum = self.reportertype_bin_sum_proportion_map[reporter_type][reporter_bin]
                 zscore = (bin_sum - control_bin_mean) / control_bin_sd
+                if zscore > REPORTER_ION_ZSCORE_CUTOFF:
+                    n_signif_ions_this_type += 1
                 # adding 1 to bin number to convert from zero-based index
-                print("    %s, mz=%d: ratio=%.02f, zscore=%.02f" % (reporter_type, reporter_bin + 1,
+                logger.debug("    %s, mz=%d: ratio=%.02f, zscore=%.02f" % (reporter_type, reporter_bin + 1,
                                                                      bin_sum / control_bin_mean, zscore))
+            if n_signif_ions_this_type >= ReporterIonProportionCalculator.N_SIGNIF_IONS_IN_TYPE_REQUIRED:
+                significant_reporter_types.add(reporter_type)
+            elif n_signif_ions_this_type > 0:
+                logger.info("%d significant ions for reporter type %s. Not enough to declare present." %
+                            (n_signif_ions_this_type, reporter_type))
             logger.debug("%s bin mean: %.02f" % (reporter_type, reporter_bin_mean))
             t_statistic = ttest_ind(reporter_bin_sums, control_bin_sums, equal_var=False)
             ratio = reporter_bin_mean / control_bin_mean
-            print("%s, overall: reporter/control mean ratio: %.04f. t-statistic: %.04f" %
-                  (reporter_type, ratio, t_statistic[0]))
+            logger.debug("%s, overall: reporter/control mean ratio: %.04f. t-statistic: %.04f" %
+                         (reporter_type, ratio, t_statistic[0]))
+        search_recommendation_messages = []
+        # handle iTRAQ
+        if "iTRAQ_8plex" in significant_reporter_types:
+            print("iTRAQ: 8-plex reporter ions detected")
+            search_recommendation_messages.append("Variable modification on K and N-terminus: %f" %
+                                                  SEARCH_MOD_MASS_ITRAQ_8PLEX)
+            if "iTRAQ_4plex" not in significant_reporter_types:
+                logger.warn("    No iTRAQ 4-plex reporters detected, only 8-plex.")
+        elif "iTRAQ_4plex" in significant_reporter_types:
+            print("iTRAQ: 4-plex reporter ions detected")
+            # 8plex mass same as 4plex, more or less
+            search_recommendation_messages.append("Variable modification on K and N-terminus: %f" %
+                                                  SEARCH_MOD_MASS_ITRAQ_8PLEX)
+        else:
+            print("iTRAQ: no reporter ions detected")
+        # handle TMT
+        if "TMT_6plex" in significant_reporter_types:
+            print("TMT: 6-plex reporter ions detected")
+            search_recommendation_messages.append("Variable modification on K and N-terminus: %f" %
+                                                  SEARCH_MOD_MASS_TMT_6PLEX)
+            if "TMT_2plex" not in significant_reporter_types:
+                logger.warn("    No TMT 2-plex reporters detected, only 6-plex")
+        elif "TMT_2plex" in significant_reporter_types:
+            print("TMT: 2-plex reporter ions detected")
+            search_recommendation_messages.append("Variable modification on K and N-terminus: %f" %
+                                                  SEARCH_MOD_MASS_TMT_2PLEX)
+        else:
+            print("TMT: no reporter ions detected")
+        return search_recommendation_messages
 
 
-class PrecursorSeparationProportionCalculator(RunAttributeDetector):
+
+class SILACDetector(RunAttributeDetector):
     """
     Calculate the number of pairs of spectra that are separated by 
     a given set of distances, as a proporation of all pairs of spectra.
@@ -214,9 +306,7 @@ class PrecursorSeparationProportionCalculator(RunAttributeDetector):
     CONTROL_BIN_DISTANCES = [11, 14, 15, 21, 23, 27]
     MAX_SCAN_SEPARATION = 50
 
-    def __init__(self, name, separation_bin_distances):
-        self.name = name
-        self.bin_distances = separation_bin_distances
+    def __init__(self):
         self.scan_numbers = []
         self.precursor_mass_bins = []
         self.n_total_spectra = 0
@@ -247,9 +337,9 @@ class PrecursorSeparationProportionCalculator(RunAttributeDetector):
         """
         # map from separation distances to counts of pairs with that separation
         counts_with_separations = {}
-        separations_to_evaluate = set(self.bin_distances + PrecursorSeparationProportionCalculator.CONTROL_BIN_DISTANCES)
-        if len(separations_to_evaluate) < len(self.bin_distances) + len(PrecursorSeparationProportionCalculator.CONTROL_BIN_DISTANCES):
-            logger.warn("A specified separation is also a control separation! Specified: %s" % str(self.bin_distances))
+        separations_to_evaluate = set(SILAC_MOD_BIN_DISTANCES + SILACDetector.CONTROL_BIN_DISTANCES)
+        if len(separations_to_evaluate) < len(SILAC_MOD_BIN_DISTANCES) + len(SILACDetector.CONTROL_BIN_DISTANCES):
+            logger.warn("A specified separation is also a control separation! Specified: %s" % str(SILAC_MOD_BIN_DISTANCES))
         for separation in separations_to_evaluate:
             counts_with_separations[separation] = 0
         
@@ -257,8 +347,8 @@ class PrecursorSeparationProportionCalculator(RunAttributeDetector):
         maxidx = 0
         for i in xrange(0, len(self.scan_numbers)):
             scan_number = self.scan_numbers[i]
-            min_scan_number = scan_number - PrecursorSeparationProportionCalculator.MAX_SCAN_SEPARATION
-            max_scan_number = scan_number + PrecursorSeparationProportionCalculator.MAX_SCAN_SEPARATION
+            min_scan_number = scan_number - SILACDetector.MAX_SCAN_SEPARATION
+            max_scan_number = scan_number + SILACDetector.MAX_SCAN_SEPARATION
             while self.scan_numbers[minidx] < min_scan_number:
                 minidx += 1
             while self.scan_numbers[maxidx] < max_scan_number and maxidx < len(self.scan_numbers) - 1:
@@ -268,22 +358,46 @@ class PrecursorSeparationProportionCalculator(RunAttributeDetector):
                 if separation in separations_to_evaluate:
                     counts_with_separations[separation] += 1
         mean_control_count = (float(sum([counts_with_separations[separation] for separation in
-                                    PrecursorSeparationProportionCalculator.CONTROL_BIN_DISTANCES])) /
-                               len(PrecursorSeparationProportionCalculator.CONTROL_BIN_DISTANCES))
-        logger.debug("Control separation counts:")
-        for separation in PrecursorSeparationProportionCalculator.CONTROL_BIN_DISTANCES:
+                                         SILACDetector.CONTROL_BIN_DISTANCES])) /
+                              len(SILACDetector.CONTROL_BIN_DISTANCES))
+        logger.debug("SILAC: Control separation counts:")
+        for separation in SILACDetector.CONTROL_BIN_DISTANCES:
             logger.debug("  %d: %d" % (separation, counts_with_separations[separation]))
-        logger.debug("Mean control separation count: %.05f" % mean_control_count)
-        logger.debug("Counts of interest:")
-        for separation in self.bin_distances:
+        logger.debug("SILAC: Mean control separation count: %.05f" % mean_control_count)
+        logger.debug("SILAC: Counts for each separation:")
+        for separation in SILAC_MOD_BIN_DISTANCES:
             proportion_to_control = float(counts_with_separations[separation]) / mean_control_count
             logger.debug("  %d: %d (proportion=%.05f)" % (separation, counts_with_separations[separation], proportion_to_control))
-        print("Ratios of %s mass separations to control separations:" % (self.name))
-        control_sd = np.std([counts_with_separations[separation] for separation in PrecursorSeparationProportionCalculator.CONTROL_BIN_DISTANCES])
-        for separation in self.bin_distances:
+        control_sd = np.std([counts_with_separations[separation] for separation in SILACDetector.CONTROL_BIN_DISTANCES])
+
+        significant_separations = []
+        search_recommendation_messages = []
+        logger.debug("SILAC: Ratios of mass separations to control separations:")
+        for separation in SILAC_MOD_BIN_DISTANCES:
             proportion_to_control = float(counts_with_separations[separation]) / mean_control_count
             zscore_to_control = float(counts_with_separations[separation] - mean_control_count) / control_sd
-            print("    %dDa: %.05f (z=%.03f)" % (separation, proportion_to_control, zscore_to_control))
+            if zscore_to_control > SILAC_ZSCORE_CUTOFF:
+                significant_separations.append(separation)
+                print("SILAC: %dDa separation detected." % separation)
+                # figure out the exact appropriate mass for search
+                varmod_mass = SEARCH_MOD_MASS_SILAC_4DA
+                if separation == 6:
+                    varmod_mass = SEARCH_MOD_MASS_SILAC_6DA
+                elif separation == 8:
+                    varmod_mass = SEARCH_MOD_MASS_SILAC_8DA
+                search_recommendation_messages.append("Variable %fDa modification on K and R" %
+                                                      varmod_mass)
+            logger.debug("SILAC:     %dDa: %.05f (z=%.03f)" % (separation, proportion_to_control,
+                                                               zscore_to_control))
+
+        if not significant_separations:
+            print("SILAC: no labeling detected.")
+        else:
+            # 6Da separation is not compatible with 4Da and 8Da
+            if 6 in significant_separations and len(significant_separations) > 1:
+                logger.warn("Detected incompatible SILAC separations: %s" % str(significant_separations))
+        return search_recommendation_messages
+
 
 # utility methods
 

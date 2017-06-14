@@ -58,7 +58,7 @@ class RunAttributeDetector(object):
     def summarize(self):
         """
         This method gets called after all spectra are processed
-        :return: 
+        :return: a list of strings to be printed as search parameter recommendations 
         """
         return
     

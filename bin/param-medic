@@ -153,14 +153,8 @@ def main():
         run_attribute_detectors.append(error_calculator)
 
     if not args.nomodinference:
-        silac_detector = mod_inference.PrecursorSeparationProportionCalculator(
-            "SILAC", mod_inference.DEFAULT_SILAC_MOD_BIN_DISTANCES)
-        reportertype_ionmzs_map = {
-            "TMT": mod_inference.DEFAULT_TMT_REPORTERION_MZS,
-            "iTRAQ4plex": mod_inference.ITRAQ_4PLEX_REPORTERION_MZS,
-            "iTRAQ8plex": mod_inference.ITRAQ_8PLEX_REPORTERION_MZS
-        }
-        reporter_detector = mod_inference.ReporterIonProportionCalculator(reportertype_ionmzs_map)
+        silac_detector = mod_inference.SILACDetector()
+        reporter_detector = mod_inference.ReporterIonProportionCalculator()
         phospho_detector = mod_inference.PhosphoLossProportionCalculator()
         run_attribute_detectors.extend([silac_detector, reporter_detector, phospho_detector])
 
@@ -184,8 +178,15 @@ def main():
             break
 
     print("Processed all spectra. Summarizing...")
+    search_parameter_recommendations = []
     for run_attribute_detector in run_attribute_detectors:
-        run_attribute_detector.summarize()
+        search_parameter_recommendations.extend(run_attribute_detector.summarize())
+    if search_parameter_recommendations:
+        print("\nSearch parameter recommendations:")
+        for recommendation in search_parameter_recommendations:
+            print(recommendation)
+    else:
+        print("No modifications detected requiring search parameter changes.")
 
     logger.debug("End time: %s. Elapsed time: %s" % (datetime.now(), datetime.now() - script_start_time))
 

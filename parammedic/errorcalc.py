@@ -334,9 +334,13 @@ class ErrorCalculator(RunAttributeDetector):
                      self.n_spectra_withinppm_withinscans_other_spectrum)
         # check the proportion of mass bins, in the whole file, that have multiple fragments.
         # If that's high, we might be looking at profile-mode data.
-        proportion_bins_multiple_frags = float(self.n_bins_multiple_frags) / \
-                                         (self.n_bins_one_frag + self.n_bins_multiple_frags)
-        logger.debug("Proportion of bins with multiple fragments: %.02f" % (proportion_bins_multiple_frags))
+        if self.n_bins_one_frag + self.n_bins_multiple_frags == 0:
+            proportion_bins_multiple_frags = 0
+            logger.debug("No values in any bin!")
+        else:
+            proportion_bins_multiple_frags = float(self.n_bins_multiple_frags) / \
+                                             (self.n_bins_one_frag + self.n_bins_multiple_frags)
+            logger.debug("Proportion of bins with multiple fragments: %.02f" % (proportion_bins_multiple_frags))
 
         precursor_distances_ppm = []
         n_zero_precursor_deltas = 0
@@ -473,32 +477,25 @@ class ErrorCalculator(RunAttributeDetector):
         (failed_precursor, precursor_message, failed_fragment, fragment_message, precursor_sigma_ppm, frag_sigma_ppm,
          precursor_prediction_ppm, fragment_prediction_th) = \
             self.calc_masserror_dist()
-        if not failed_precursor:
-            logger.debug('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
-        if not failed_fragment:
-            logger.debug('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
-        logger.debug('')
-
-        most_common_charge = 0
-        n_with_mostcommon_charge = 0
-        for charge in self.charge_spectracount_map:
-            if self.charge_spectracount_map[charge] > n_with_mostcommon_charge:
-                n_with_mostcommon_charge = self.charge_spectracount_map[charge]
-                most_common_charge = charge
-        print('most common MS/MS scan charge: %d' % most_common_charge)
+        print("Precursor and fragment error summary:")
         if failed_precursor:
-            print('ERROR: failed to calculate precursor error:')
+            print("Precursor error calculation failed:")
             print(precursor_message)
         else:
-            print('precursor ppm standard deviation: %f' % precursor_sigma_ppm)
-            print("Precursor error estimate (ppm): %.2f" % precursor_prediction_ppm)
-        print('')
+            print('precursor standard deviation: %f ppm' % precursor_sigma_ppm)
         if failed_fragment:
-            print('ERROR: failed to calculate fragment error:')
+            print("Fragment error calculation failed:")
             print(fragment_message)
         else:
-            print('fragment standard deviation (ppm): %f' % frag_sigma_ppm)
-            print("Fragment bin size estimate (Th): %.4f" % fragment_prediction_th)
+            print('fragment standard deviation: %f ppm' % frag_sigma_ppm)
+        logger.debug('')
+
+        search_param_messages = []
+        if not failed_precursor:
+            search_param_messages.append("Precursor error: %.2f ppm" % precursor_prediction_ppm)
+        if not failed_fragment:
+            search_param_messages.append("Fragment bin size: %.4f Th" % fragment_prediction_th)
+        return search_param_messages
 
     def next_file(self):
         """
