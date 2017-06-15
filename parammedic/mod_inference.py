@@ -68,15 +68,15 @@ REPORTER_ION_ZSCORE_CUTOFF = 7.0
 MAX_BINS_FOR_MASS = 20000
 
 # delta mass representing a loss of phosphorylation
-# Phospho is lost as (H3PO4, -98Da), according to Villen:
+# Phospho is typically lost as a neutral (H3PO4, -98Da), according to Villen (and many others):
 #http://faculty.washington.edu/jvillen/wordpress/wp-content/uploads/2016/04/Beausoleil_PNAS_04.pdf
-DELTA_MASS_PHOSPHO_LOSS = -98.0
+DELTA_MASS_PHOSPHO_LOSS = 98.0
 # offsets from the phospho peak to use as control peaks.
 # Don't use 1 or 2 above the phospho peak, because could be M+1 and M+2 peaks for the phospho peak
-PHOSPHO_CONTROLPEAK_PHOSPHOPEAK_OFFSETS = [-4, -3, -2, -1, 3, 4, 5, 6]
+PHOSPHO_CONTROLPEAK_PHOSPHOPEAK_OFFSETS = [-20, -15, -12, -10, 10, 12, 15, 20]
 
 # z-score cutoff above which we consider phosphorylation to be present
-PHOSPHO_ZSCORE_CUTOFF = 17.0
+PHOSPHO_ZSCORE_CUTOFF = 13.0
 
 # modification masses for different reagents are from www.unimod.org
 # iTRAQ 8plex mass is the preferred mass to use when quantifying all ions
@@ -123,25 +123,28 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
     def process_spectrum(self, spectrum):
         """
         Handle a spectrum. Calculate precursor mass from m/z and charge, then calculate
-        mass of phospho loss and convert back to m/z. Look for charge-1 ion representing
-        that loss. accumulate proportion of total signal contained in those ions
+        mass of phospho loss and convert back to m/z. Look for ion representing
+        that loss, in same charge as precursor. accumulate proportion of total signal 
+        contained in those ions. Do the same thing for several control ions
         :param spectrum: 
         :return: 
         """
         self.n_total_spectra += 1
-        precursor_mass = calc_mplush_from_mz_charge(spectrum.precursor_mz, spectrum.charge)
-        phospho_loss_mass = precursor_mass - DELTA_MASS_PHOSPHO_LOSS
-        # look in same charge as precursor, because phospho loss is neutral
-        phospho_loss_charge1_mz = calc_mz_from_mplush_charge(phospho_loss_mass, spectrum.charge)
-        phospho_loss_bin = calc_binidx_for_mz_fragment(phospho_loss_charge1_mz)
+        # phospho loss peak is DELTA_MASS_PHOSPHO_LOSS lighter than precursor, and in the same charge state
+        phospho_loss_mz = spectrum.precursor_mz - (DELTA_MASS_PHOSPHO_LOSS / spectrum.charge)
+        phospho_loss_bin = calc_binidx_for_mz_fragment(phospho_loss_mz)
+        #print("%d. %d. %d. %d" % (spectrum.scan_number, spectrum.charge, calc_binidx_for_mz_fragment(spectrum.precursor_mz), phospho_loss_bin))
         control_bins = []
+        # total signal in this spectrum, for calculating proportions
         signal_total = sum(spectrum.intensity_array)
+        # define the control bins for this spectrum
         for offset in PHOSPHO_CONTROLPEAK_PHOSPHOPEAK_OFFSETS:
             control_bins.append(phospho_loss_bin + offset)
+        # loop over all the peaks, incrementing proportion sums in phospho loss and control bins
         for i in xrange(0, len(spectrum.mz_array)):
             frag_binidx = calc_binidx_for_mz_fragment(spectrum.mz_array[i])
             if frag_binidx == phospho_loss_bin:
-                self.sum_proportions_in_phosopholoss += spectrum.intensity_array[i] / signal_total
+                self.sum_proportions_in_phosopholoss += (spectrum.intensity_array[i] / signal_total)
             elif frag_binidx in control_bins:
                 self.sums_proportions_per_controlpeak[frag_binidx - phospho_loss_bin] += (spectrum.intensity_array[i] / signal_total)
 
@@ -153,8 +156,12 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         """
         control_mean = np.mean(self.sums_proportions_per_controlpeak.values())
         control_sd = np.std(self.sums_proportions_per_controlpeak.values())
+        logger.debug("Phospho control peaks (mean=%.03f):" % control_mean)
+        for control_peak in self.sums_proportions_per_controlpeak:
+            logger.debug("    %d: %.04f" % (control_peak, self.sums_proportions_per_controlpeak[control_peak]))
         proportion_to_control = self.sum_proportions_in_phosopholoss / control_mean
         zscore_to_control = (self.sum_proportions_in_phosopholoss - control_mean) / control_sd
+        logger.debug("Phospho-loss peak: %.03f" % self.sum_proportions_in_phosopholoss)
         logger.debug("Phospho: ratio phospho-loss to control peaks: %.05f (z=%.03f)" % (proportion_to_control, zscore_to_control))
         if zscore_to_control > PHOSPHO_ZSCORE_CUTOFF:
             print("Phosphorylation: detected")
