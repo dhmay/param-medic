@@ -10,7 +10,7 @@ If multiple files are specified, they will be processed together.
 import argparse
 import logging
 from datetime import datetime
-from parammedic import errorcalc, ms2_io, mzml_io, mod_inference
+from parammedic import errorcalc, ms2_io, mzml_io, mod_inference, enzyme_inference
 from parammedic import __version__
 import gzip
 
@@ -132,6 +132,7 @@ def main():
         # any module-specific debugging goes below
         errorcalc.logger.setLevel(logging.DEBUG)
         mod_inference.logger.setLevel(logging.DEBUG)
+        enzyme_inference.logger.setLevel(logging.DEBUG)
 
     script_start_time = datetime.now()
     logger.debug("Start time: %s" % script_start_time)
@@ -156,7 +157,8 @@ def main():
         silac_detector = mod_inference.SILACDetector()
         reporter_detector = mod_inference.ReporterIonProportionCalculator()
         phospho_detector = mod_inference.PhosphoLossProportionCalculator()
-        run_attribute_detectors.extend([silac_detector, reporter_detector, phospho_detector])
+        enzyme_detector = enzyme_inference.EnzymeDetector()
+        run_attribute_detectors.extend([silac_detector, reporter_detector, phospho_detector, enzyme_detector])
 
     n_spectra_processed = 0
     is_first_file = 0

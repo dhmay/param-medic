@@ -5,11 +5,37 @@ Utility code used by multiple modules
 
 # Separation between Averagine peaks. This is used for binning spectra
 import abc
+import math
 
 AVERAGINE_PEAK_SEPARATION = 1.0005079
 
 # mass of a hydrogen atom
 HYDROGEN_MASS = 1.00794
+
+# unmodified masses of each amino acid
+AA_UNMOD_MASSES = {
+    'A': 71.03711,
+    'C': 103.00919, # note no iodoacetamide
+    'D': 115.02694,
+    'E': 129.04259,
+    'F': 147.06841,
+    'G': 57.02146,
+    'H': 137.05891,
+    'I': 113.08406,
+    'K': 128.09496,
+    'L': 113.08406,
+    'M': 131.04049,
+    'N': 114.04293,
+    'P': 97.05276,
+    'Q': 128.05858,
+    'R': 156.10111,
+    'S': 87.03203,
+    'T': 101.04768,
+    'V': 99.06841,
+    'W': 186.07931,
+    'Y': 163.06333
+}
+
 
 class MSSpectrum(object):
     """
@@ -69,3 +95,44 @@ class RunAttributeDetector(object):
         :return: 
         """
         return
+
+
+def calc_binidx_for_mass_precursor(mass):
+    """
+    Calculate the appropriate bin for a given precursor mass
+    Note: offset bin divisions so that they occur at the minima between Averagine peaks
+    :param mass: 
+    :return: 
+    """
+    return max(0, int(math.floor((mass + AVERAGINE_PEAK_SEPARATION * 0.5) / AVERAGINE_PEAK_SEPARATION)))
+
+
+def calc_binidx_for_mz_fragment(mz):
+    """
+    Calculate the appropriate bin for a given fragment m/z value
+    Note: offset bin divisions so that they occur at the minima between Averagine peaks
+    :param mz: 
+    :return: 
+    """
+    return max(0, int(math.floor((mz + AVERAGINE_PEAK_SEPARATION * 0.5) / AVERAGINE_PEAK_SEPARATION)))
+
+
+def calc_mplush_from_mz_charge(mz, charge):
+    """
+    Given an mz and a charge, calculate the M+H mass of the ion
+    :param mz:
+    :param charge:
+    :return:
+    """
+    return (mz - HYDROGEN_MASS) * charge + HYDROGEN_MASS
+
+
+def calc_mz_from_mplush_charge(m_plus_h, charge):
+    """
+    Given an M+H and a charge, calculate mz
+    :param m_plus_h:
+    :param charge:
+    :return:
+    """
+    return (m_plus_h - HYDROGEN_MASS) / charge + HYDROGEN_MASS
+

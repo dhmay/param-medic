@@ -8,12 +8,12 @@ detectors
 """
 
 import logging
-import math
+
 import numpy as np
 from scipy.stats import ttest_ind
 
-from parammedic.util import RunAttributeDetector
-from util import AVERAGINE_PEAK_SEPARATION, HYDROGEN_MASS
+from parammedic.util import RunAttributeDetector, calc_binidx_for_mass_precursor, calc_binidx_for_mz_fragment, \
+    calc_mplush_from_mz_charge
 
 __author__ = "Damon May"
 __copyright__ = "Copyright (c) 2016 Damon May"
@@ -406,31 +406,3 @@ class SILACDetector(RunAttributeDetector):
         return search_recommendation_messages
 
 
-# utility methods
-
-def calc_binidx_for_mass_precursor(mass):
-    return int(math.floor(mass / AVERAGINE_PEAK_SEPARATION))
-
-
-def calc_binidx_for_mz_fragment(mz):
-    return int(math.floor(mz / AVERAGINE_PEAK_SEPARATION))
-
-
-def calc_mplush_from_mz_charge(mz, charge):
-    """
-    Given an mz and a charge, calculate the M+H mass of the ion
-    :param mz:
-    :param charge:
-    :return:
-    """
-    return (mz - HYDROGEN_MASS) * charge + HYDROGEN_MASS
-
-
-def calc_mz_from_mplush_charge(m_plus_h, charge):
-    """
-    Given an M+H and a charge, calculate mz
-    :param m_plus_h:
-    :param charge:
-    :return:
-    """
-    return (m_plus_h - HYDROGEN_MASS) / charge + HYDROGEN_MASS
