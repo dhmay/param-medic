@@ -79,6 +79,8 @@ def declare_gather_args():
                         help='suppress precursor and fragment error calculation')
     parser.add_argument('--nomodinference', action="store_true",
                         help='suppress modification inference')
+    parser.add_argument('--enzyme', action="store_true",
+                        help='infer digestion enzyme')
 
     parser.add_argument('--debug', action="store_true", help='Enable debug logging')
     parser.add_argument('--version', action='version', version='%(prog)s {version}'.format(version=__version__))
@@ -137,7 +139,9 @@ def main():
     script_start_time = datetime.now()
     logger.debug("Start time: %s" % script_start_time)
 
+    error_calculator = None
     run_attribute_detectors = []
+    modification_detectors = []
     if not args.noerrorcalc:
         error_calculator = errorcalc.ErrorCalculator(min_precursor_mz=args.min_precursor_mz,
                                                      max_precursor_mz=args.max_precursor_mz,
@@ -157,11 +161,11 @@ def main():
         silac_detector = mod_inference.SILACDetector()
         reporter_detector = mod_inference.ReporterIonProportionCalculator()
         phospho_detector = mod_inference.PhosphoLossProportionCalculator()
-        enzyme_detector = enzyme_inference.EnzymeDetector()
-        run_attribute_detectors.extend([silac_detector, reporter_detector, phospho_detector, enzyme_detector])
+        modification_detectors.extend([silac_detector, reporter_detector, phospho_detector])
+    run_attribute_detectors.extend(modification_detectors)
 
     n_spectra_processed = 0
-    is_first_file = 0
+    is_first_file = True
     for infile in args.infiles:
         if not is_first_file:
             for run_attribute_detector in run_attribute_detectors:
@@ -176,17 +180,49 @@ def main():
             if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
                 logger.info("Stopping early after %d spectra." % n_spectra_processed)
                 break
+        infile.close()
+        is_first_file = False
         if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
             break
 
     print("Processed all spectra. Summarizing...")
+    detected_modifications = []
+    for modification_detector in modification_detectors:
+        detected_modifications.extend(modification_detector.summarize())
     search_parameter_recommendations = []
-    for run_attribute_detector in run_attribute_detectors:
-        search_parameter_recommendations.extend(run_attribute_detector.summarize())
+    if error_calculator:
+        search_parameter_recommendations.extend(error_calculator.summarize())
+    search_parameter_recommendations.extend(detected_modifications)
+
+    if args.enzyme:
+        # go back through the input files
+        print("Inferring enzyme...")
+        n_spectra_processed = 0
+        enzyme_detector = enzyme_inference.EnzymeDetector(detected_modifications)
+        is_first_file = True
+        for infile in args.infiles:
+            print("Processing input file %s..." % infile.name)
+            reopened_infile = open(infile.name)
+            if not is_first_file:
+                for run_attribute_detector in run_attribute_detectors:
+                    run_attribute_detector.next_file()
+            logger.debug("Processing input file %s..." % infile.name)
+            for spectrum in generate_spectra(reopened_infile):
+                if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
+                    logger.debug("  processed %d total spectra..." % n_spectra_processed)
+                    enzyme_detector.process_spectrum(spectrum)
+                n_spectra_processed += 1
+                if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
+                    logger.info("Stopping early after %d spectra." % n_spectra_processed)
+                    break
+            reopened_infile.close()
+            is_first_file = False
+        print("Enzyme: %s" % enzyme_detector.summarize())
+
     if search_parameter_recommendations:
         print("\nSearch parameter recommendations:")
-        for recommendation in search_parameter_recommendations:
-            print(recommendation)
+        for modification in search_parameter_recommendations:
+            print(modification)
     else:
         print("No modifications detected requiring search parameter changes.")
 

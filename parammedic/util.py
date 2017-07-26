@@ -12,6 +12,11 @@ AVERAGINE_PEAK_SEPARATION = 1.0005079
 # mass of a hydrogen atom
 HYDROGEN_MASS = 1.00794
 
+# N-terminal and C-terminal modifications are indicated with these keys.
+# Amino acid modifications are indicated with the relevant AA
+MOD_TYPE_KEY_NTERM = "NTERM"
+MOD_TYPE_KEY_CTERM = "CTERM"
+
 # unmodified masses of each amino acid
 AA_UNMOD_MASSES = {
     'A': 71.03711,
@@ -84,7 +89,7 @@ class RunAttributeDetector(object):
     def summarize(self):
         """
         This method gets called after all spectra are processed
-        :return: a list of strings to be printed as search parameter recommendations 
+        :return: a list of Modifications to be used in search 
         """
         return
     
@@ -136,3 +141,21 @@ def calc_mz_from_mplush_charge(m_plus_h, charge):
     """
     return (m_plus_h - HYDROGEN_MASS) / charge + HYDROGEN_MASS
 
+
+class Modification(object):
+    """
+    indicates the location, mass difference and variable or static nature of a modification
+    """
+    def __init__(self, location, mass_diff, is_variable):
+        self.location = location
+        self.mass_diff = mass_diff
+        self.is_variable = is_variable
+
+    def __str__(self):
+        static_variable_str = "Variable" if self.is_variable else "Static"
+        location_str = self.location
+        if self.location == MOD_TYPE_KEY_NTERM:
+            location_str = "N terminus"
+        elif self.location == MOD_TYPE_KEY_CTERM:
+            location_str = "C terminus"
+        return "%s modification of %fDa on %s" % (static_variable_str, self.mass_diff, location_str)

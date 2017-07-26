@@ -8,6 +8,7 @@ detectors
 """
 
 import logging
+from parammedic import util
 
 import numpy as np
 from scipy.stats import ttest_ind
@@ -163,12 +164,13 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         zscore_to_control = (self.sum_proportions_in_phosopholoss - control_mean) / control_sd
         logger.debug("Phospho-loss peak: %.03f" % self.sum_proportions_in_phosopholoss)
         logger.debug("Phospho: ratio phospho-loss to control peaks: %.05f (z=%.03f)" % (proportion_to_control, zscore_to_control))
+        search_modifications = []
         if zscore_to_control > PHOSPHO_ZSCORE_CUTOFF:
             print("Phosphorylation: detected")
-            return ["%f variable precursor modification" % SEARCH_MOD_MASS_PHOSPHO]
+            search_modifications.append(util.Modification(util.MOD_TYPE_KEY_CTERM, SEARCH_MOD_MASS_PHOSPHO, True))
         else:
             print("Phosphorylation: not detected")
-            return []
+        return search_modifications
 
 
 class ReporterIonProportionCalculator(RunAttributeDetector):
@@ -271,35 +273,37 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             ratio = reporter_bin_mean / control_bin_mean
             logger.debug("%s, overall: reporter/control mean ratio: %.04f. t-statistic: %.04f" %
                          (reporter_type, ratio, t_statistic[0]))
-        search_recommendation_messages = []
+        search_modifications = []
         # handle iTRAQ
         if "iTRAQ_8plex" in significant_reporter_types:
             print("iTRAQ: 8-plex reporter ions detected")
-            search_recommendation_messages.append("Variable modification on K and N-terminus: %f" %
-                                                  SEARCH_MOD_MASS_ITRAQ_8PLEX)
+            search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_ITRAQ_8PLEX, True))
+            search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_ITRAQ_8PLEX, True))
             if "iTRAQ_4plex" not in significant_reporter_types:
                 logger.warn("    No iTRAQ 4-plex reporters detected, only 8-plex.")
         elif "iTRAQ_4plex" in significant_reporter_types:
             print("iTRAQ: 4-plex reporter ions detected")
             # 8plex mass same as 4plex, more or less
-            search_recommendation_messages.append("Variable modification on K and N-terminus: %f" %
-                                                  SEARCH_MOD_MASS_ITRAQ_8PLEX)
+            search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_ITRAQ_8PLEX, True))
+            search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_ITRAQ_8PLEX, True))
         else:
             print("iTRAQ: no reporter ions detected")
+        has_itraq = len(search_modifications) > 0
+
         # handle TMT
         if "TMT_6plex" in significant_reporter_types:
             print("TMT: 6-plex reporter ions detected")
-            search_recommendation_messages.append("Variable modification on K and N-terminus: %f" %
-                                                  SEARCH_MOD_MASS_TMT_6PLEX)
+            search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_TMT_6PLEX, True))
+            search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_TMT_6PLEX, True))
             if "TMT_2plex" not in significant_reporter_types:
                 logger.warn("    No TMT 2-plex reporters detected, only 6-plex")
         elif "TMT_2plex" in significant_reporter_types:
             print("TMT: 2-plex reporter ions detected")
-            search_recommendation_messages.append("Variable modification on K and N-terminus: %f" %
-                                                  SEARCH_MOD_MASS_TMT_2PLEX)
+            search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_TMT_2PLEX, True))
+            search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_TMT_2PLEX, True))
         else:
             print("TMT: no reporter ions detected")
-        return search_recommendation_messages
+        return search_modifications
 
 
 
@@ -378,7 +382,7 @@ class SILACDetector(RunAttributeDetector):
         control_sd = np.std([counts_with_separations[separation] for separation in SILACDetector.CONTROL_BIN_DISTANCES])
 
         significant_separations = []
-        search_recommendation_messages = []
+        search_modifications = []
         logger.debug("SILAC: Ratios of mass separations to control separations:")
         for separation in SILAC_MOD_BIN_DISTANCES:
             proportion_to_control = float(counts_with_separations[separation]) / mean_control_count
@@ -392,8 +396,8 @@ class SILACDetector(RunAttributeDetector):
                     varmod_mass = SEARCH_MOD_MASS_SILAC_6DA
                 elif separation == 8:
                     varmod_mass = SEARCH_MOD_MASS_SILAC_8DA
-                search_recommendation_messages.append("Variable %fDa modification on K and R" %
-                                                      varmod_mass)
+                search_modifications.append(util.Modification("K", varmod_mass, True))
+                search_modifications.append(util.Modification("R", varmod_mass, True))
             logger.debug("SILAC:     %dDa: %.05f (z=%.03f)" % (separation, proportion_to_control,
                                                                zscore_to_control))
 
@@ -403,6 +407,6 @@ class SILACDetector(RunAttributeDetector):
             # 6Da separation is not compatible with 4Da and 8Da
             if 6 in significant_separations and len(significant_separations) > 1:
                 logger.warn("Detected incompatible SILAC separations: %s" % str(significant_separations))
-        return search_recommendation_messages
+        return search_modifications
 
 
