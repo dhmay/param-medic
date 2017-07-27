@@ -40,6 +40,9 @@ ALL_CONTROL_AAS = {"A", "C", "D", "E", "G", "H", "K", "I", "M", "N", "P", "R", "
 # If proportion is less than threshold, b1 ions will be used
 PROPORTION_ONETHIRDPRECURSOR_Y1_THRESHOLD = 0.4
 
+# If we don't get this many spectra, warn that we can't be confident in our assessment
+MIN_SPECTRA_FOR_CONFIDENCE = 2000
+
 #MIN_CONTROL_MZ = 110.5 * util.HYDROGEN_MASS
 #MIN_CONTROL_BINIDX = util.calc_binidx_for_mz_fragment(MIN_CONTROL_MZ)
 #MAX_CONTROL_MZ = 206.5 * util.HYDROGEN_MASS
@@ -47,10 +50,10 @@ PROPORTION_ONETHIRDPRECURSOR_Y1_THRESHOLD = 0.4
 #N_CONTROL_BINS = MAX_CONTROL_BINIDX - MIN_CONTROL_BINIDX + 1
 
 # thresholds for considering various statistics significant
-MIN_TRYPSIN_ZSCORE_THRESHOLD = 3.0
+MIN_TRYPSIN_ZSCORE_THRESHOLD = 2.0
 # Bias is toward Trypsin. If we don't find evidence for anything else, and minimum K or R z-score is above
 # this threshold, then report probably trypsin
-MIN_TRYPSIN_ZSCORE_LIKELY_THRESHOLD = 2.0
+MIN_TRYPSIN_ZSCORE_LIKELY_THRESHOLD = 1.5 
 MIN_ARGC_LYSC_ZSCORE_THRESHOLD = 5.0
 MIN_PEPSIN_TSTAT_THRESHOLD = 5.0
 MIN_CHYMOTRYPSIN_NOPEPSIN_TSTAT_THRESHOLD = 5.0
@@ -154,13 +157,17 @@ class EnzymeDetector(RunAttributeDetector):
         curspectrum_bnminus1_aa_binidx_map = {}
         for aa in self.aa_masses:
             #b(n-1) ion for this amino acid is the precursor mz - the y1 ion, plus the mass of H
+            # there are at least three ways to go about calculating this.
             #bnminus1_mz_this_aa = spectrum.precursor_mz - self.aa_y1_charge1_mz_map[aa] + util.HYDROGEN_MASS
             #bnminus1_mz_this_aa = spectrum.precursor_mz - self.aa_masses[aa] - self.cterm_mass
             bnminus1_mz_this_aa = (spectrum.precursor_mz - util.HYDROGEN_MASS) * spectrum.charge - self.aa_masses[aa] - self.cterm_mass + util.HYDROGEN_MASS
             curspectrum_bnminus1_aa_binidx_map[aa] = calc_binidx_for_mz_fragment(bnminus1_mz_this_aa)
         for aa in self.aa_masses:
             self.sum_proportions_y1_dict[aa] += binned_spectrum[self.aa_y1_charge1_bin_map[aa]]
-            self.sum_proportions_bnminus1_dict[aa] += binned_spectrum[curspectrum_bnminus1_aa_binidx_map[aa]]
+            if curspectrum_bnminus1_aa_binidx_map[aa] >= len(binned_spectrum):
+                logger.debug("Ignoring b(n-1) ion because precursor is too high! precursor=%f, charge=%d" % (spectrum.precursor_mz, spectrum.charge))
+            else:
+                self.sum_proportions_bnminus1_dict[aa] += binned_spectrum[curspectrum_bnminus1_aa_binidx_map[aa]]
 
     def summarize(self):
         """
@@ -177,8 +184,6 @@ class EnzymeDetector(RunAttributeDetector):
             aa_proportion_sums_for_test_dict = self.sum_proportions_bnminus1_dict
             logger.debug("Using b(n-1) ions for enzyme determination.")
 
-        for aa in aa_proportion_sums_for_test_dict:
-            logger.debug("%s: %f" % (aa, aa_proportion_sums_for_test_dict[aa] / self.n_total_spectra))
 
         # Trypsin, ArgC and LysC.
         # Trypsin is just ArgC + LysC. So test R and K individually. If the lower of the two is significant,
@@ -187,19 +192,24 @@ class EnzymeDetector(RunAttributeDetector):
         control_bin_sums = [aa_proportion_sums_for_test_dict[aa] for aa in control_aas]
         control_mean = np.mean(control_bin_sums)
         control_sd = np.std(control_bin_sums)
-        argc_zscore = (aa_proportion_sums_for_test_dict['R'] - control_mean) / control_sd
-        logger.debug("  ArgC z-score: %f" % argc_zscore)
-        lysc_zscore = (aa_proportion_sums_for_test_dict['K'] - control_mean) / control_sd
-        logger.debug("  LysC z-score: %f" % lysc_zscore)
-        trypsin_min_zscore = min(argc_zscore, lysc_zscore)
+
+        aa_zscores = {}
+        for aa in aa_proportion_sums_for_test_dict:
+            aa_zscores[aa] = (aa_proportion_sums_for_test_dict[aa] - control_mean) / control_sd
+            logger.debug("%s: %.4f (z = %.4f)" %
+                         (aa, aa_proportion_sums_for_test_dict[aa] / self.n_total_spectra, aa_zscores[aa]))
+
+        logger.debug("  ArgC z-score: %f" % aa_zscores['R'])
+        logger.debug("  LysC z-score: %f" % aa_zscores['K'])
+        trypsin_min_zscore = min(aa_zscores['R'], aa_zscores['K'])
         logger.debug("  min(ArgC, LysC): %f" % trypsin_min_zscore)
         if trypsin_min_zscore > MIN_TRYPSIN_ZSCORE_THRESHOLD:
             return "trypsin"
 
         # OK, we don't think it's trypsin. That's the main finding. But can we get more specific?
-        if lysc_zscore > MIN_ARGC_LYSC_ZSCORE_THRESHOLD:
+        if aa_zscores['K'] > MIN_ARGC_LYSC_ZSCORE_THRESHOLD:
             return ENZYME_STR_LYSC
-        if argc_zscore > MIN_ARGC_LYSC_ZSCORE_THRESHOLD:
+        if aa_zscores['R'] > MIN_ARGC_LYSC_ZSCORE_THRESHOLD:
             return ENZYME_STR_ARGC
 
         # Try Pepsin. Don't test against Pepsin or Chymotrypsin controls
@@ -220,6 +230,8 @@ class EnzymeDetector(RunAttributeDetector):
         if trypsin_min_zscore > MIN_TRYPSIN_ZSCORE_LIKELY_THRESHOLD:
             print("Trypsin test passes bare minimum threshold, and no other enzyme detected.")
             return ENZYME_STR_LIKELY_TRYPSIN
+        if self.n_total_spectra < MIN_SPECTRA_FOR_CONFIDENCE:
+            print("WARNING: only %d spectra were analyzed. Enzyme determination is suspect.")
         return ENZYME_STR_UNKNOWN
 
 

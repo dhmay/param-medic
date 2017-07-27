@@ -21,6 +21,9 @@ __license__ = "Apache 2.0"
 logger = logging.getLogger(__name__)
 SPECTRUM_PROCESSED_REPORT_INTERVAL = 1000
 
+# if we see fewer spectra than this, everything is questionable
+MIN_SPECTRA_FOR_CONFIDENCE = 2000
+
 
 def declare_gather_args():
     """
@@ -233,8 +236,8 @@ def main():
             print(modification)
     else:
         print("No modifications detected requiring search parameter changes.")
-
-    logger.debug("End time: %s. Elapsed time: %s" % (datetime.now(), datetime.now() - script_start_time))
+    if n_spectra_processed < MIN_SPECTRA_FOR_CONFIDENCE:
+        print("WARNING: only %d spectra were analyzed. Confidence in all assessments is low.")
 
 
 def generate_spectra(spectra_file):
