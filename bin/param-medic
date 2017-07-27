@@ -215,7 +215,7 @@ def main():
                     run_attribute_detector.next_file()
             logger.debug("Processing input file %s..." % infile.name)
             for spectrum in generate_spectra(reopened_infile):
-                binned_spectrum = util.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
+                binned_spectrum = binning.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
                 if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
                     logger.debug("  processed %d total spectra..." % n_spectra_processed)
                     enzyme_detector.process_spectrum(spectrum, binned_spectrum)
