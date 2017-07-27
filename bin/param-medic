@@ -221,7 +221,7 @@ def main():
                 binned_spectrum = binning.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
                 if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
                     logger.debug("  processed %d total spectra..." % n_spectra_processed)
-                    enzyme_detector.process_spectrum(spectrum, binned_spectrum)
+                enzyme_detector.process_spectrum(spectrum, binned_spectrum)
                 n_spectra_processed += 1
                 if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
                     logger.info("Stopping early after %d spectra." % n_spectra_processed)

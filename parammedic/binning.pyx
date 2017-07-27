@@ -49,10 +49,10 @@ AA_UNMOD_MASSES = {
 }
 
 BINNING_MIN_MZ = 50.5 * util.AVERAGINE_PEAK_SEPARATION
-BINNING_MAX_MZ = 5000.5 * util.AVERAGINE_PEAK_SEPARATION
+BINNING_MAX_MZ = 6000.5 * util.AVERAGINE_PEAK_SEPARATION
+N_BINS = int(float(BINNING_MAX_MZ - BINNING_MIN_MZ) / util.AVERAGINE_PEAK_SEPARATION) + 1
 
 logger = logging.getLogger(__name__)
-
 
 def calc_binidx_for_mass_precursor(float mass, float min_mass_for_bin=BINNING_MIN_MZ,
                                    float bin_size=util.AVERAGINE_PEAK_SEPARATION):

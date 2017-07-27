@@ -10,6 +10,7 @@ import logging
 import numpy as np
 from parammedic import util
 from scipy.stats import ttest_ind
+import binning
 
 from util import RunAttributeDetector, AA_UNMOD_MASSES
 from parammedic.binning import calc_binidx_for_mz_fragment
@@ -72,11 +73,10 @@ class EnzymeDetector(RunAttributeDetector):
     Accumulates the proportion of MS/MS fragment signal that's accounted for
     by fragments representing a loss of DELTA_MASS_PHOSPHO_LOSS Da from the precursor mass
     
-    todo: if the sample is TMT-labeled, account for TMT mass on Lys and N-term
+    todo: if the sample is TMT-labeled, account for TMT mass on Lys and N-term. Similarly for other modifications.
     """
     def __init__(self, sample_modifications):
         """
-        
         :param sample_modifications: a list of modifications detected in the sample
         """
         self.n_total_spectra = 0
@@ -94,7 +94,7 @@ class EnzymeDetector(RunAttributeDetector):
 
         self.cterm_mass = CTERM_MASS_UNMOD
         self.aa_masses = dict(AA_UNMOD_MASSES)
-
+        
         mod_locations = set()
         for modification in sample_modifications:
             print("Accounting for modification: %s" % modification)
@@ -117,13 +117,6 @@ class EnzymeDetector(RunAttributeDetector):
             self.sum_proportions_bnminus1_dict[aa] = 0.0
         logger.debug("Y1 ion mzs:")
         logger.debug(self.aa_y1_charge1_mz_map)
-
-#        self.control_bin_proportion_sums = [0.0] * N_CONTROL_BINS
-#        print("Y1 mzs: ")
-#        for aa in AA_UNMOD_MASSES:
-#            print("%s: %f   %d" % (aa, self.aa_y1_charge1_mz_map[aa], self.aa_y1_charge1_bin_map[aa]))
-#        print(CTERM_MASS)
-#        quit()
 
     def next_file(self):
         """
@@ -154,6 +147,10 @@ class EnzymeDetector(RunAttributeDetector):
         proportion_onethird_precursor = sum(spectrum.intensity_array[0:idx_onethird_precursor_mz + 1])
         self.sum_proportion_ms2_signal_onethird_precursor += (proportion_onethird_precursor / signal_total)
 
+#        for i in xrange(0, len(binned_spectrum)):
+#            if binned_spectrum[i] > MIN_PROPORTION_SIGNAL_FOR_FRAGMENT_COUNT:
+#                self.spectrumcounts_withsignal_perbin[i] += 1
+
         curspectrum_bnminus1_aa_binidx_map = {}
         for aa in self.aa_masses:
             #b(n-1) ion for this amino acid is the precursor mz - the y1 ion, plus the mass of H
@@ -165,7 +162,8 @@ class EnzymeDetector(RunAttributeDetector):
         for aa in self.aa_masses:
             self.sum_proportions_y1_dict[aa] += binned_spectrum[self.aa_y1_charge1_bin_map[aa]]
             if curspectrum_bnminus1_aa_binidx_map[aa] >= len(binned_spectrum):
-                logger.debug("Ignoring b(n-1) ion because precursor is too high! precursor=%f, charge=%d" % (spectrum.precursor_mz, spectrum.charge))
+                pass
+                # logger.debug("Ignoring b(n-1) ion because precursor is too high! precursor=%f, charge=%d" % (spectrum.precursor_mz, spectrum.charge))
             else:
                 self.sum_proportions_bnminus1_dict[aa] += binned_spectrum[curspectrum_bnminus1_aa_binidx_map[aa]]
 
@@ -203,6 +201,7 @@ class EnzymeDetector(RunAttributeDetector):
         logger.debug("  LysC z-score: %f" % aa_zscores['K'])
         trypsin_min_zscore = min(aa_zscores['R'], aa_zscores['K'])
         logger.debug("  min(ArgC, LysC): %f" % trypsin_min_zscore)
+
         if trypsin_min_zscore > MIN_TRYPSIN_ZSCORE_THRESHOLD:
             return "trypsin"
 
@@ -231,42 +230,15 @@ class EnzymeDetector(RunAttributeDetector):
             print("Trypsin test passes bare minimum threshold, and no other enzyme detected.")
             return ENZYME_STR_LIKELY_TRYPSIN
         if self.n_total_spectra < MIN_SPECTRA_FOR_CONFIDENCE:
-            print("WARNING: only %d spectra were analyzed. Enzyme determination is suspect.")
+            print("WARNING: only %d spectra were analyzed. Enzyme determination is suspect." % self.n_total_spectra)
+
+
+
+
         return ENZYME_STR_UNKNOWN
 
 
-#        print("bin\tproportion")
-#        for i in xrange(0, N_CONTROL_BINS):
-#            print("%d\t%f" % (i + MIN_CONTROL_BINIDX, self.control_bin_proportion_sums[i] / self.n_total_spectra))
-#        # remove trypsin, chymotrypsin bins from controls
-#        control_bins_to_remove = []
-#        for aa in TRYPSIN_AAS + CHYMOTRYPSIN_AAS:
-#            mz_to_remove = util.AA_UNMOD_MASSES[aa] + CTERM_MASS + util.HYDROGEN_MASS
-#            binidx_to_remove = calc_binidx_for_mz_fragment(mz_to_remove) - MIN_CONTROL_BINIDX
-#            print("removing %s: %f, %d" % (aa, mz_to_remove, binidx_to_remove))
-#            control_bins_to_remove.append(binidx_to_remove)
-#        #control_bins_to_remove.append(calc_binidx_for_mz_fragment(129.1) - MIN_CONTROL_BINIDX)
-#        control_bins_to_remove.sort(reverse=True)
-#        print("Before remove: %d" % len(self.control_bin_proportion_sums))
-#        for control_bin in control_bins_to_remove:
-#            print("removing %d" % control_bin)
-#            del self.control_bin_proportion_sums[control_bin]
-#        print("After remove: %d" % len(self.control_bin_proportion_sums))
-#        print([x/self.n_total_spectra for x in self.control_bin_proportion_sums])
-#        for curiontype_proportion_map in [self.sum_proportions_y1_dict, self.sum_proportions_bnminus1_dict]:
-#            print("ion type.")
-#            control_bin_sums = self.control_bin_proportion_sums
-#            control_mean = np.mean(control_bin_sums)
-#            control_sd = np.std(control_bin_sums)
-#            argc_zscore = (curiontype_proportion_map['R'] - control_mean) / control_sd
-#            print("  ArgC z-score: %f" % argc_zscore)
-#            lysc_zscore = (curiontype_proportion_map['K'] - control_mean) / control_sd
-#            print("  LysC z-score: %f" % lysc_zscore)
-#            trypsin_min_zscore = min(argc_zscore, lysc_zscore)
-#            print("  min(ArgC, LysC): %f" % trypsin_min_zscore)
-#            chymo_bin_sums = [curiontype_proportion_map[aa] for aa in CHYMOTRYPSIN_AAS]
-#            chymotrypsin_t_statistic = ttest_ind(chymo_bin_sums, control_bin_sums)[0]
-#            print("  Chymotrypsin t-statistic: %f" % chymotrypsin_t_statistic)
+
 
         return result
 
