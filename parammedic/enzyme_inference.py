@@ -11,8 +11,8 @@ import numpy as np
 from parammedic import util
 from scipy.stats import ttest_ind
 
-from parammedic.util import RunAttributeDetector, calc_binidx_for_mz_fragment, \
-    AA_UNMOD_MASSES
+from util import RunAttributeDetector, AA_UNMOD_MASSES
+from parammedic.binning import calc_binidx_for_mz_fragment
 
 __author__ = "Damon May"
 __copyright__ = "Copyright (c) 2016 Damon May"

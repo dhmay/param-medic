@@ -10,7 +10,7 @@ If multiple files are specified, they will be processed together.
 import argparse
 import logging
 from datetime import datetime
-from parammedic import errorcalc, ms2_io, mzml_io, mod_inference, enzyme_inference, util
+from parammedic import errorcalc, ms2_io, mzml_io, mod_inference, enzyme_inference, util, binning
 from parammedic import __version__
 import gzip
 
@@ -175,7 +175,7 @@ def main():
                 run_attribute_detector.next_file()
         logger.debug("Processing input file %s..." % infile.name)
         for spectrum in generate_spectra(infile):
-            binned_spectrum = util.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
+            binned_spectrum = binning.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
             if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
                 logger.debug("  processed %d total spectra..." % n_spectra_processed)
             for run_attribute_detector in run_attribute_detectors:

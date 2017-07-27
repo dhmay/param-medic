@@ -10,7 +10,7 @@ long_description = 'Param-Medic breathes new life into MS/MS database searches b
 if os.path.exists('README.rst'):
     long_description = open('README.rst').read()
 
-ext_names = ['mixturemodel', 'util']
+ext_names = ['mixturemodel', 'binning']
 EXTENSIONS = []
 for ext_name in ext_names:
     EXTENSIONS.append(Extension("parammedic." + ext_name,
