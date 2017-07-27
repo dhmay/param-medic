@@ -85,7 +85,7 @@ def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=Fals
             continue
 
         elif chunks[0] == "S":
-            logger.debug("S line")
+            #logger.debug("S line")
 
             if len(chunks) != 4:
                 raise ValueError("Misformatted line %d.\n%s\n" % (line_number, line))
@@ -97,18 +97,20 @@ def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=Fals
                     retention_time = 0.0
                 # sometimes, a Z line will have a 0 charge. Punt on those
                 if charge is not None and charge > 0:
-                    logger.debug("0 charge!")
                     yield parammedic.util.MS2Spectrum(scan_number,
                                                       retention_time,
                                                       fragment_mzs,
                                                       fragment_intensities,
                                                       precursor_mz, charge)
                     n_yielded += 1
-                    logger.debug("Yielded #%d" % n_yielded)
+                    #logger.debug("Yielded #%d" % n_yielded)
                 # zero out everything not on this line so that we know if we got it for the next scan
                 charge = None
             else:
-                logger.debug("Incomplete scan!")
+                pass
+#                logger.debug("Incomplete scan! scan_number? %s. retention time? %s. fragment_mzs? %s. fragment_intensities? %s. precursor_mz? %s. charge? %s" %
+#                             (scan_number is not None, retention_time is not None, len(fragment_mzs) > 0, len(fragment_intensities) > 0,
+#                              precursor_mz is not None, charge is not None and charge > 0))
 
             # new scan, so reset mz and intensity lists
             fragment_mzs = []
@@ -122,7 +124,7 @@ def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=Fals
                 retention_time = float(chunks[2])
 
         elif chunks[0] == "Z":
-            logger.debug("Z line")
+            #logger.debug("Z line")
             if len(chunks) != 3:
                 raise ValueError("Misformatted Z line:\n%s\n" % line)
             charge = int(chunks[1])

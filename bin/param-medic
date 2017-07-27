@@ -10,7 +10,7 @@ If multiple files are specified, they will be processed together.
 import argparse
 import logging
 from datetime import datetime
-from parammedic import errorcalc, ms2_io, mzml_io, mod_inference, enzyme_inference
+from parammedic import errorcalc, ms2_io, mzml_io, mod_inference, enzyme_inference, util
 from parammedic import __version__
 import gzip
 
@@ -135,6 +135,9 @@ def main():
         errorcalc.logger.setLevel(logging.DEBUG)
         mod_inference.logger.setLevel(logging.DEBUG)
         enzyme_inference.logger.setLevel(logging.DEBUG)
+        ms2_io.logger.setLevel(logging.DEBUG)
+        mzml_io.logger.setLevel(logging.DEBUG)
+        util.logger.setLevel(logging.DEBUG)
 
     script_start_time = datetime.now()
     logger.debug("Start time: %s" % script_start_time)
@@ -172,10 +175,11 @@ def main():
                 run_attribute_detector.next_file()
         logger.debug("Processing input file %s..." % infile.name)
         for spectrum in generate_spectra(infile):
+            binned_spectrum = util.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
             if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
                 logger.debug("  processed %d total spectra..." % n_spectra_processed)
             for run_attribute_detector in run_attribute_detectors:
-                run_attribute_detector.process_spectrum(spectrum)
+                run_attribute_detector.process_spectrum(spectrum, binned_spectrum)
             n_spectra_processed += 1
             if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
                 logger.info("Stopping early after %d spectra." % n_spectra_processed)
@@ -184,6 +188,9 @@ def main():
         is_first_file = False
         if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
             break
+    if n_spectra_processed == 0:
+        print("No spectra found! Quitting.")
+        quit(1)
 
     print("Processed all spectra. Summarizing...")
     detected_modifications = []
@@ -208,9 +215,10 @@ def main():
                     run_attribute_detector.next_file()
             logger.debug("Processing input file %s..." % infile.name)
             for spectrum in generate_spectra(reopened_infile):
+                binned_spectrum = util.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
                 if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
                     logger.debug("  processed %d total spectra..." % n_spectra_processed)
-                    enzyme_detector.process_spectrum(spectrum)
+                    enzyme_detector.process_spectrum(spectrum, binned_spectrum)
                 n_spectra_processed += 1
                 if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
                     logger.info("Stopping early after %d spectra." % n_spectra_processed)
@@ -248,4 +256,8 @@ def generate_spectra(spectra_file):
     for spectrum in io_module.read_ms2_scans(handle):
         yield spectrum
 
+start_time = datetime.now()
+logger.debug("Start time: %s" % start_time)
 main()
+logger.debug("End time: %s" % datetime.now())
+logger.debug("Elapsed time: %s" % (datetime.now() - start_time))

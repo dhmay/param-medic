@@ -37,7 +37,7 @@ from util import RunAttributeDetector
 import numpy as np
 
 from mixturemodel import GeneralMixtureModel, NormalDistribution, UniformDistribution
-from parammedic.util import AVERAGINE_PEAK_SEPARATION
+from util import AVERAGINE_PEAK_SEPARATION
 
 __author__ = "Damon May"
 __copyright__ = "Copyright (c) 2016 Damon May"
@@ -224,7 +224,7 @@ class ErrorCalculator(RunAttributeDetector):
         """
         self.binidx_currentspectrum_map = {}
 
-    def process_spectrum(self, spectrum):
+    def process_spectrum(self, spectrum, binned_spectrum):
         """
         Handle a spectrum. Check its charge and its number of scans. If passes, find the right
         bin for the precursor. If there's a previous scan in that bin, check to see if we've got

@@ -77,7 +77,7 @@ DELTA_MASS_PHOSPHO_LOSS = 98.0
 PHOSPHO_CONTROLPEAK_PHOSPHOPEAK_OFFSETS = [-20, -15, -12, -10, 10, 12, 15, 20]
 
 # z-score cutoff above which we consider phosphorylation to be present
-PHOSPHO_ZSCORE_CUTOFF = 13.0
+PHOSPHO_ZSCORE_CUTOFF = 9.0
 
 # modification masses for different reagents are from www.unimod.org
 # iTRAQ 8plex mass is the preferred mass to use when quantifying all ions
@@ -121,13 +121,14 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         """
         return
 
-    def process_spectrum(self, spectrum):
+    def process_spectrum(self, spectrum, binned_spectrum):
         """
         Handle a spectrum. Calculate precursor mass from m/z and charge, then calculate
         mass of phospho loss and convert back to m/z. Look for ion representing
         that loss, in same charge as precursor. accumulate proportion of total signal 
         contained in those ions. Do the same thing for several control ions
         :param spectrum: 
+        :param binned_spectrum: 
         :return: 
         """
         self.n_total_spectra += 1
@@ -135,19 +136,10 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         phospho_loss_mz = spectrum.precursor_mz - (DELTA_MASS_PHOSPHO_LOSS / spectrum.charge)
         phospho_loss_bin = calc_binidx_for_mz_fragment(phospho_loss_mz)
         #print("%d. %d. %d. %d" % (spectrum.scan_number, spectrum.charge, calc_binidx_for_mz_fragment(spectrum.precursor_mz), phospho_loss_bin))
-        control_bins = []
-        # total signal in this spectrum, for calculating proportions
-        signal_total = sum(spectrum.intensity_array)
-        # define the control bins for this spectrum
+        # increment the control bins for this spectrum
         for offset in PHOSPHO_CONTROLPEAK_PHOSPHOPEAK_OFFSETS:
-            control_bins.append(phospho_loss_bin + offset)
-        # loop over all the peaks, incrementing proportion sums in phospho loss and control bins
-        for i in xrange(0, len(spectrum.mz_array)):
-            frag_binidx = calc_binidx_for_mz_fragment(spectrum.mz_array[i])
-            if frag_binidx == phospho_loss_bin:
-                self.sum_proportions_in_phosopholoss += (spectrum.intensity_array[i] / signal_total)
-            elif frag_binidx in control_bins:
-                self.sums_proportions_per_controlpeak[frag_binidx - phospho_loss_bin] += (spectrum.intensity_array[i] / signal_total)
+            self.sums_proportions_per_controlpeak[offset] += binned_spectrum[phospho_loss_bin + offset]
+        self.sum_proportions_in_phosopholoss += binned_spectrum[phospho_loss_bin]
 
     def summarize(self):
         """
@@ -213,7 +205,7 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
         """
         return
         
-    def process_spectrum(self, spectrum):
+    def process_spectrum(self, spectrum, binned_spectrum):
         """
         Process a single spectrum, checking all fragment mzs against the lists of 
         mzs for each reporter type
@@ -222,16 +214,9 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
         """
         # accounting
         self.n_total_spectra += 1
-        signal_total = sum(spectrum.intensity_array)
-        for i in xrange(0, len(spectrum.mz_array)):
-            mz_bin = calc_binidx_for_mz_fragment(spectrum.mz_array[i])
-            if mz_bin in self.all_bins_considered:
-                intensity_i = spectrum.intensity_array[i]
-                # for each reporter type, check if the mz_bin is one of the bins for that type.
-                # if so, add this peak's intensity to the sum for that type.
-                for reporter_type in self.reporter_ion_type_bins_map:
-                    if mz_bin in self.reporter_ion_type_bins_map[reporter_type]:
-                        self.reportertype_bin_sum_proportion_map[reporter_type][mz_bin] += intensity_i / signal_total
+        for reporter_type in self.reporter_ion_type_bins_map:
+            for mz_bin in self.reportertype_bin_sum_proportion_map[reporter_type]:
+                self.reportertype_bin_sum_proportion_map[reporter_type][mz_bin] += binned_spectrum[mz_bin]
 
     def summarize(self):
         """
@@ -329,7 +314,7 @@ class SILACDetector(RunAttributeDetector):
         """
         return
 
-    def process_spectrum(self, spectrum):
+    def process_spectrum(self, spectrum, binned_spectrum):
         """
         Just add a count to the bin containing this precursor
         :return: 
@@ -375,10 +360,16 @@ class SILACDetector(RunAttributeDetector):
         for separation in SILACDetector.CONTROL_BIN_DISTANCES:
             logger.debug("  %d: %d" % (separation, counts_with_separations[separation]))
         logger.debug("SILAC: Mean control separation count: %.05f" % mean_control_count)
-        logger.debug("SILAC: Counts for each separation:")
-        for separation in SILAC_MOD_BIN_DISTANCES:
-            proportion_to_control = float(counts_with_separations[separation]) / mean_control_count
-            logger.debug("  %d: %d (proportion=%.05f)" % (separation, counts_with_separations[separation], proportion_to_control))
+        if mean_control_count > 0:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("SILAC: Counts for each separation:")
+                for separation in SILAC_MOD_BIN_DISTANCES:
+                    proportion_to_control = float(counts_with_separations[separation]) / mean_control_count
+                    logger.debug("  %d: %d (proportion=%.05f)" % (separation, counts_with_separations[separation], proportion_to_control))
+        else:
+            logger.warn("SILAC: No counts for any control separation pairs! Cannot estimate prevalence of SILAC separations.")
+            return []
+
         control_sd = np.std([counts_with_separations[separation] for separation in SILACDetector.CONTROL_BIN_DISTANCES])
 
         significant_separations = []

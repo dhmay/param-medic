@@ -55,8 +55,8 @@ def read_scans(mzml_file, ms_levels=(1, 2)):
                 # ignore these.
                 try:
                     yield read_scan(scan)
-                except ValueError:
-                    logger.debug("Warning! Scan with indeterminable charge.")
+                except ValueError as e:
+                    logger.debug("Warning! Scan with indeterminable charge: %s" % e)
 
 
 def read_scan(scan):

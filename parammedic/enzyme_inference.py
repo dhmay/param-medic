@@ -32,7 +32,7 @@ CHYMOTRYPSIN_NOPEPSIN_AAS = {'W', 'Y'}
 CHYMOTRYPSIN_ALL_AAS = PEPSIN_AAS.union(CHYMOTRYPSIN_NOPEPSIN_AAS)
 THERMOLYSIN_AAS = {'I', 'L', 'V', 'A', 'M', 'F'}
 # Full list of possible control AAs.
-# Do not use T (120Th) because it has very high signal in trypsinized human runs.
+# Do not use T (120Th) because it has very high signal in a bunch of trypsinized human runs.
 ALL_CONTROL_AAS = {"A", "C", "D", "E", "G", "H", "K", "I", "M", "N", "P", "R", "S", "V"}  # note: no T
 
 # minimum proportion of MS/MS signal that must come from fragments 1/3 the m/z of the precursor ion
@@ -129,13 +129,14 @@ class EnzymeDetector(RunAttributeDetector):
         """
         return
 
-    def process_spectrum(self, spectrum):
+    def process_spectrum(self, spectrum, binned_spectrum):
         """
         Handle a spectrum. Calculate precursor mass from m/z and charge, then calculate
         mass of phospho loss and convert back to m/z. Look for ion representing
         that loss, in same charge as precursor. accumulate proportion of total signal 
         contained in those ions. Do the same thing for several control ions
         :param spectrum: 
+        :param binned_spectrum
         :return: 
         """
         self.n_total_spectra += 1
@@ -157,17 +158,9 @@ class EnzymeDetector(RunAttributeDetector):
             #bnminus1_mz_this_aa = spectrum.precursor_mz - self.aa_masses[aa] - self.cterm_mass
             bnminus1_mz_this_aa = (spectrum.precursor_mz - util.HYDROGEN_MASS) * spectrum.charge - self.aa_masses[aa] - self.cterm_mass + util.HYDROGEN_MASS
             curspectrum_bnminus1_aa_binidx_map[aa] = calc_binidx_for_mz_fragment(bnminus1_mz_this_aa)
-        # loop over all the peaks, incrementing proportion sums in all relevant bins
-        for i in xrange(0, len(spectrum.mz_array)):
-            frag_binidx = calc_binidx_for_mz_fragment(spectrum.mz_array[i])
-            for aa in self.aa_masses:
-                if frag_binidx == self.aa_y1_charge1_bin_map[aa]:
-                    self.sum_proportions_y1_dict[aa] += (spectrum.intensity_array[i] / signal_total)
-                if frag_binidx == curspectrum_bnminus1_aa_binidx_map[aa]:
-                    self.sum_proportions_bnminus1_dict[aa] += (spectrum.intensity_array[i] / signal_total)
-#            if MIN_CONTROL_BINIDX <= frag_binidx <= MAX_CONTROL_BINIDX:
-#                self.control_bin_proportion_sums[frag_binidx - MIN_CONTROL_BINIDX] += (spectrum.intensity_array[i] / signal_total)
-
+        for aa in self.aa_masses:
+            self.sum_proportions_y1_dict[aa] += binned_spectrum[self.aa_y1_charge1_bin_map[aa]]
+            self.sum_proportions_bnminus1_dict[aa] += binned_spectrum[curspectrum_bnminus1_aa_binidx_map[aa]]
 
     def summarize(self):
         """
