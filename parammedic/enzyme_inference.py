@@ -1,6 +1,14 @@
 #!/usr/bin/env python
 """
-Code to infer the digestion enzyme used in an experiment.
+Code to infer the digestion enzyme used in an experiment. The approach is simple: for each amino acid, count
+the number of spectra in which the signal representing that amino acid rises above a threshold, for both y1
+ions and b(n-1) ions. As we go through, also determine whether y1 ions are observable by totaling the amount
+of signal that's < 1/3 of the precursor. If y1 ions are observable, use those. If not, use b(n-1).
+
+Finally, test each enzyme, using all the amino acids not involved in any enzyme (or, in one case, otherwise
+apparently problematic) as controls. Test trypsin first. If K and R both pop up above a threshold, report trypsin.
+Then work through some other enzymes. If nothing's convincing, report "unknown" and report all the scores
+for each individual amino acid.
 
 """
 
@@ -10,7 +18,6 @@ import logging
 import numpy as np
 from parammedic import util
 from scipy.stats import ttest_ind
-import binning
 
 from util import RunAttributeDetector, AA_UNMOD_MASSES
 from parammedic.binning import calc_binidx_for_mz_fragment
@@ -23,15 +30,18 @@ __version__ = ""
 
 logger = logging.getLogger(__name__)
 
-
+# construct the unmodified mass of the peptide C-terminus
 MOD_OXIDATION_MASSDIFF = 15.994915
 CTERM_MASS_UNMOD = 2 * util.HYDROGEN_MASS + MOD_OXIDATION_MASSDIFF
 
+# C-terminal amino acids to expect from each enzyme.
+# This tool can only handle C-terminal AA cleavage
 TRYPSIN_AAS = {'K', 'R'}
 PEPSIN_AAS = {'F', 'L'}
 CHYMOTRYPSIN_NOPEPSIN_AAS = {'W', 'Y'}
 CHYMOTRYPSIN_ALL_AAS = PEPSIN_AAS.union(CHYMOTRYPSIN_NOPEPSIN_AAS)
 THERMOLYSIN_AAS = {'I', 'L', 'V', 'A', 'M', 'F'}
+
 # Full list of possible control AAs.
 # Do not use T (120Th) because it has very high signal in a bunch of trypsinized human runs.
 ALL_CONTROL_AAS = {"A", "C", "D", "E", "G", "H", "K", "I", "M", "N", "P", "R", "S", "V"}  # note: no T
@@ -43,12 +53,6 @@ PROPORTION_ONETHIRDPRECURSOR_Y1_THRESHOLD = 0.4
 
 # If we don't get this many spectra, warn that we can't be confident in our assessment
 MIN_SPECTRA_FOR_CONFIDENCE = 2000
-
-#MIN_CONTROL_MZ = 110.5 * util.HYDROGEN_MASS
-#MIN_CONTROL_BINIDX = util.calc_binidx_for_mz_fragment(MIN_CONTROL_MZ)
-#MAX_CONTROL_MZ = 206.5 * util.HYDROGEN_MASS
-#MAX_CONTROL_BINIDX = util.calc_binidx_for_mz_fragment(MAX_CONTROL_MZ)
-#N_CONTROL_BINS = MAX_CONTROL_BINIDX - MIN_CONTROL_BINIDX + 1
 
 # thresholds for considering various statistics significant
 MIN_TRYPSIN_ZSCORE_THRESHOLD = 2.0
@@ -66,6 +70,10 @@ ENZYME_STR_ARGC = "Arg-C"
 ENZYME_STR_CHYMOTRYPSIN = "Chymotrypsin"
 ENZYME_STR_PEPSIN = "Pepsin"
 ENZYME_STR_UNKNOWN = "Unknown"
+
+# minimum proportion of the MS/MS signal that must be contained in a bin for it to count.
+# above this threshold, all signals count equally
+MIN_BIN_PROPORTION_FOR_COUNT = 0.005
 
 
 class EnzymeDetector(RunAttributeDetector):
@@ -160,12 +168,23 @@ class EnzymeDetector(RunAttributeDetector):
             bnminus1_mz_this_aa = (spectrum.precursor_mz - util.HYDROGEN_MASS) * spectrum.charge - self.aa_masses[aa] - self.cterm_mass + util.HYDROGEN_MASS
             curspectrum_bnminus1_aa_binidx_map[aa] = calc_binidx_for_mz_fragment(bnminus1_mz_this_aa)
         for aa in self.aa_masses:
-            self.sum_proportions_y1_dict[aa] += binned_spectrum[self.aa_y1_charge1_bin_map[aa]]
+            # if the appropriate bin for this AA is over the threshold, count it
+            bin_y1_signal = binned_spectrum[self.aa_y1_charge1_bin_map[aa]]
+            if bin_y1_signal > MIN_BIN_PROPORTION_FOR_COUNT:
+                self.sum_proportions_y1_dict[aa] += 1
+            # alternative method for scoring amino acids: sum up total signal
+            #self.sum_proportions_y1_dict[aa] += bin_y1_signal
             if curspectrum_bnminus1_aa_binidx_map[aa] >= len(binned_spectrum):
                 pass
+                # commenting out debug statement because too verbose!
                 # logger.debug("Ignoring b(n-1) ion because precursor is too high! precursor=%f, charge=%d" % (spectrum.precursor_mz, spectrum.charge))
             else:
-                self.sum_proportions_bnminus1_dict[aa] += binned_spectrum[curspectrum_bnminus1_aa_binidx_map[aa]]
+                # if the appropriate bin for this AA is over the threshold, count it
+                bin_bnminus1_signal = binned_spectrum[curspectrum_bnminus1_aa_binidx_map[aa]]
+                if bin_bnminus1_signal > MIN_BIN_PROPORTION_FOR_COUNT:
+                    self.sum_proportions_y1_dict[aa] += 1
+                # alternative method for scoring amino acids: sum up total signal
+                #self.sum_proportions_bnminus1_dict[aa] += bin_bnminus1_signal
 
     def summarize(self):
         """
@@ -173,6 +192,8 @@ class EnzymeDetector(RunAttributeDetector):
         all spectra
         :return: 
         """
+        if self.n_total_spectra < MIN_SPECTRA_FOR_CONFIDENCE:
+            print("WARNING: only %d spectra were analyzed. Enzyme determination is suspect." % self.n_total_spectra)
         proportion_lessthan_onethirdprecursor = self.sum_proportion_ms2_signal_onethird_precursor / self.n_total_spectra
         logger.debug("Signal proportion under 1/3 precursor mz: %f" % proportion_lessthan_onethirdprecursor)
         if proportion_lessthan_onethirdprecursor > PROPORTION_ONETHIRDPRECURSOR_Y1_THRESHOLD:
@@ -182,20 +203,23 @@ class EnzymeDetector(RunAttributeDetector):
             aa_proportion_sums_for_test_dict = self.sum_proportions_bnminus1_dict
             logger.debug("Using b(n-1) ions for enzyme determination.")
 
-
         # Trypsin, ArgC and LysC.
         # Trypsin is just ArgC + LysC. So test R and K individually. If the lower of the two is significant,
         # Trypsin. If not, then if R or K significant, then that one.
-        control_aas = ALL_CONTROL_AAS.difference(TRYPSIN_AAS)
-        control_bin_sums = [aa_proportion_sums_for_test_dict[aa] for aa in control_aas]
-        control_mean = np.mean(control_bin_sums)
-        control_sd = np.std(control_bin_sums)
+        trypsin_control_aas = ALL_CONTROL_AAS.difference(TRYPSIN_AAS)
+        control_values = [aa_proportion_sums_for_test_dict[aa] for aa in trypsin_control_aas]
+        control_mean = np.mean(control_values)
+        control_sd = np.std(control_values)
 
         aa_zscores = {}
+        # debug report on each AA. Save up the messages. If enzyme = unknown, we'll print them
+        per_aa_messages = []
         for aa in aa_proportion_sums_for_test_dict:
             aa_zscores[aa] = (aa_proportion_sums_for_test_dict[aa] - control_mean) / control_sd
-            logger.debug("%s: %.4f (z = %.4f)" %
-                         (aa, aa_proportion_sums_for_test_dict[aa] / self.n_total_spectra, aa_zscores[aa]))
+            message = ("%s: spectra: %.4f. z-score = %.4f" %
+                       (aa, aa_proportion_sums_for_test_dict[aa] / self.n_total_spectra, aa_zscores[aa]))
+            logger.debug(message)
+            per_aa_messages.append(message)
 
         logger.debug("  ArgC z-score: %f" % aa_zscores['R'])
         logger.debug("  LysC z-score: %f" % aa_zscores['K'])
@@ -213,32 +237,30 @@ class EnzymeDetector(RunAttributeDetector):
 
         # Try Pepsin. Don't test against Pepsin or Chymotrypsin controls
         control_aas = ALL_CONTROL_AAS.difference(CHYMOTRYPSIN_ALL_AAS)
-        pepsin_bin_sums = [aa_proportion_sums_for_test_dict[aa] for aa in PEPSIN_AAS]
-        control_bin_sums = [aa_proportion_sums_for_test_dict[aa] for aa in control_aas]
-        pepsin_t_statistic = ttest_ind(pepsin_bin_sums, control_bin_sums)[0]
+        pepsin_values = [aa_proportion_sums_for_test_dict[aa] for aa in PEPSIN_AAS]
+        control_values = [aa_proportion_sums_for_test_dict[aa] for aa in control_aas]
+        pepsin_t_statistic = ttest_ind(pepsin_values, control_values)[0]
         logger.debug("  Pepsin t-statistic: %f" % pepsin_t_statistic)
-        chymo_bin_sums = [aa_proportion_sums_for_test_dict[aa] for aa in CHYMOTRYPSIN_NOPEPSIN_AAS]
-        chymotrypsin_t_statistic = ttest_ind(chymo_bin_sums, control_bin_sums)[0]
+        # Try Chymotrypsin
+        chymo_values = [aa_proportion_sums_for_test_dict[aa] for aa in CHYMOTRYPSIN_NOPEPSIN_AAS]
+        chymotrypsin_t_statistic = ttest_ind(chymo_values, control_values)[0]
         logger.debug("  Chymotrypsin (but not Pepsin) t-statistic: %f" % chymotrypsin_t_statistic)
+
+        # Test Pepsin. If passes, test separately for chymotrypsin. Return one or the other.
         if pepsin_t_statistic > MIN_PEPSIN_TSTAT_THRESHOLD:
             if chymotrypsin_t_statistic > MIN_CHYMOTRYPSIN_NOPEPSIN_TSTAT_THRESHOLD:
                 return ENZYME_STR_CHYMOTRYPSIN
             else:
                 return ENZYME_STR_PEPSIN
 
+        # Didn't detect anything else. If we can say it's "likely" trypsin, do so
         if trypsin_min_zscore > MIN_TRYPSIN_ZSCORE_LIKELY_THRESHOLD:
             print("Trypsin test passes bare minimum threshold, and no other enzyme detected.")
             return ENZYME_STR_LIKELY_TRYPSIN
-        if self.n_total_spectra < MIN_SPECTRA_FOR_CONFIDENCE:
-            print("WARNING: only %d spectra were analyzed. Enzyme determination is suspect." % self.n_total_spectra)
 
-
-
-
+        # We got nothin'. Give the user the information so they can decide.
+        print("Unable to determine enzyme. Summary of each amino acid:")
+        for message in per_aa_messages:
+            print(message)
         return ENZYME_STR_UNKNOWN
-
-
-
-
-        return result
 
