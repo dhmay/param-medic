@@ -297,7 +297,7 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             print("iTRAQ: 4-plex reporter ions detected")
             # 8plex mass same as 4plex, more or less
             search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_ITRAQ_4PLEX, True))
-            search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_ITRAQ_8PLEX, True))
+            search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_ITRAQ_4PLEX, True))
         else:
             print("iTRAQ: no reporter ions detected")
         has_itraq = len(search_modifications) > 0
