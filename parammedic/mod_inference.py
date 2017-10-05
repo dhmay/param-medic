@@ -37,10 +37,16 @@ SILAC_ZSCORE_CUTOFF = 6.0
 
 
 # TMT constants
-
-TMT_2PLEX_REPORTERION_MZS = [126.0, 127.0]
+# I got the exact values from here: http://lgatto.github.io/MSnbase/reference/TMT6.html
+TMT_2PLEX_REPORTERION_MZS = [126.1277, 127.1311]
 # the TMT 6-plex reporter ion m/zs that are NOT in the 4plex ion list
-TMT_6PLEXONLY_REPORTERION_MZS = [128.0, 129.0, 130.0, 131.0]
+TMT_6PLEXONLY_REPORTERION_MZS = [128.1344, 129.1378, 130.1411, 131.1382]
+
+# the TMT 10-plex reporter ion m/zs that are NOT in the 2- and 4-plex ion list.
+# Note: because these are so close to the 2-plex and 10-plex ions, it only makes sense to use these
+# in a high-resolution pass
+#TMT_10PLEXONLY_REPORTERION_MZS = [127.1248, 128.1281, 129.1315, 130.1348]
+
 ITRAQ_4PLEX_REPORTERION_MZS = [114.0, 115.0, 116.0, 117.0]
 # the iTRAQ 8-plex reporter ion m/zs that are NOT in the 4plex ion list
 ITRAQ_8PLEXONLY_REPORTERION_MZS = [117.0, 118.0, 119.0, 121.0]
@@ -61,8 +67,17 @@ REPORTER_ION_TYPE_MZS_MAP = {
     "control": REPORTER_ION_CONTROL_MZS
 }
 
-# z-score cutoff above which we consider a particular reporter ion to be present
-REPORTER_ION_ZSCORE_CUTOFF = 7.0
+REPORTER_ION_TSTAT_THRESHOLDS_MAP = {
+    "TMT_2plex": 2.0,
+    "TMT_6plex": 2.0,
+    "iTRAQ_4plex": 1.5,
+    "iTRAQ_8plex": 1.5,
+}
+
+# z-score cutoff above which we consider a particular reporter ion to be present.
+# Values derived empirically for each reporter
+ITRAQ_REPORTER_ION_ZSCORE_CUTOFF = 2.0
+TMT_REPORTER_ION_ZSCORE_CUTOFF = 3.5
 
 
 # number of bins to keep track of for mass. Approximates maximum precursor mass considered
@@ -80,7 +95,8 @@ PHOSPHO_CONTROLPEAK_PHOSPHOPEAK_OFFSETS = [-20, -15, -12, -10, 10, 12, 15, 20]
 PHOSPHO_ZSCORE_CUTOFF = 9.0
 
 # modification masses for different reagents are from www.unimod.org
-# iTRAQ 8plex mass is the preferred mass to use when quantifying all ions
+# http://www.unimod.org/modifications_view.php?editid1=214
+SEARCH_MOD_MASS_ITRAQ_4PLEX = 144.10253
 # http://www.unimod.org/modifications_view.php?editid1=730
 SEARCH_MOD_MASS_ITRAQ_8PLEX = 304.205360
 # http://www.unimod.org/modifications_view.php?editid1=738
@@ -240,24 +256,35 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             reporter_bin_sums = self.reportertype_bin_sum_proportion_map[reporter_type].values()
             reporter_bin_mean = np.mean(reporter_bin_sums)
             logger.debug("%s, individual ions:" % reporter_type)
+            ion_zscores = []
             for reporter_bin in sorted(self.reportertype_bin_sum_proportion_map[reporter_type]):
                 bin_sum = self.reportertype_bin_sum_proportion_map[reporter_type][reporter_bin]
                 zscore = (bin_sum - control_bin_mean) / control_bin_sd
-                if zscore > REPORTER_ION_ZSCORE_CUTOFF:
+                if reporter_type.startswith('iTRAQ'):
+                    cutoff_this_ion = ITRAQ_REPORTER_ION_ZSCORE_CUTOFF
+                elif reporter_type.startswith('TMT'):
+                    cutoff_this_ion = TMT_REPORTER_ION_ZSCORE_CUTOFF
+                else:
+                    raise ValueError('Unknown reporter ion type %s' % reporter_type)
+                if zscore > cutoff_this_ion:
                     n_signif_ions_this_type += 1
                 # adding 1 to bin number to convert from zero-based index
                 logger.debug("    %s, mz=%d: ratio=%.02f, zscore=%.02f" % (reporter_type, reporter_bin + 1,
                                                                      bin_sum / control_bin_mean, zscore))
-            if n_signif_ions_this_type >= ReporterIonProportionCalculator.N_SIGNIF_IONS_IN_TYPE_REQUIRED:
-                significant_reporter_types.add(reporter_type)
-            elif n_signif_ions_this_type > 0:
-                logger.info("%d significant ions for reporter type %s. Not enough to declare present." %
-                            (n_signif_ions_this_type, reporter_type))
+                ion_zscores.append(zscore)
+            logger.debug("%s, ion zscores: %s" % (reporter_type, "\t".join([str(x) for x in ion_zscores])))
+#            if n_signif_ions_this_type >= ReporterIonProportionCalculator.N_SIGNIF_IONS_IN_TYPE_REQUIRED:
+#                significant_reporter_types.add(reporter_type)
+#            elif n_signif_ions_this_type > 0:
+#                logger.info("%d significant ions for reporter type %s. Not enough to declare present." %
+#                            (n_signif_ions_this_type, reporter_type))
             logger.debug("%s bin mean: %.02f" % (reporter_type, reporter_bin_mean))
-            t_statistic = ttest_ind(reporter_bin_sums, control_bin_sums, equal_var=False)
+            t_statistic = ttest_ind(reporter_bin_sums, control_bin_sums, equal_var=False)[0]
             ratio = reporter_bin_mean / control_bin_mean
             logger.debug("%s, overall: reporter/control mean ratio: %.04f. t-statistic: %.04f" %
-                         (reporter_type, ratio, t_statistic[0]))
+                         (reporter_type, ratio, t_statistic))
+            if t_statistic > REPORTER_ION_TSTAT_THRESHOLDS_MAP[reporter_type]:
+                significant_reporter_types.add(reporter_type)
         search_modifications = []
         # handle iTRAQ
         if "iTRAQ_8plex" in significant_reporter_types:
@@ -269,7 +296,7 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
         elif "iTRAQ_4plex" in significant_reporter_types:
             print("iTRAQ: 4-plex reporter ions detected")
             # 8plex mass same as 4plex, more or less
-            search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_ITRAQ_8PLEX, True))
+            search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_ITRAQ_4PLEX, True))
             search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_ITRAQ_8PLEX, True))
         else:
             print("iTRAQ: no reporter ions detected")
