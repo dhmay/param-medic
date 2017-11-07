@@ -32,7 +32,7 @@ I'll consider a rewrite.
 import logging
 import math
 import random
-from util import RunAttributeDetector
+from util import RunAttributeDetector, MIN_SCAN_PEAKS
 
 import numpy as np
 
@@ -56,8 +56,7 @@ DEFAULT_MAX_MZ_FOR_BIN_FRAGMENT = 1800.
 
 # charge of scan to consider. T
 DEFAULT_CHARGE = 2
-# minimum number of MS2 fragments that a scan must have to be considered
-DEFAULT_MIN_SCAN_MS2PEAKS = 40
+
 # Number of most-intense fragment peaks to store per scan
 DEFAULT_TOPN_FRAGPEAKS = 30
 # Minimum number of fragments two scans must have in common (at a gross level) to
@@ -110,7 +109,7 @@ class ErrorCalculator(RunAttributeDetector):
                  min_frag_mz=DEFAULT_MIN_MZ_FOR_BIN_FRAGMENT,
                  max_frag_mz=DEFAULT_MAX_MZ_FOR_BIN_FRAGMENT,
                  charge=DEFAULT_CHARGE,
-                 min_scan_frag_peaks=DEFAULT_MIN_SCAN_MS2PEAKS,
+                 min_scan_frag_peaks=MIN_SCAN_PEAKS,
                  topn_frag_peaks=DEFAULT_TOPN_FRAGPEAKS,
                  min_common_frag_peaks=DEFAULT_MIN_FRAGPEAKS_INCOMMON,
                  pair_topn_frag_peaks=DEFAULT_TOPN_FRAGPEAKS_FOR_ERROR_EST,

@@ -96,9 +96,12 @@ PHOSPHO_ZSCORE_CUTOFF = 9.0
 
 # modification masses for different reagents are from www.unimod.org
 # http://www.unimod.org/modifications_view.php?editid1=214
+# except using this from Jimmy, instead. Average of masses for 114 (144.105918), 115 (144.09599), and 116/117 (144.102063)
 SEARCH_MOD_MASS_ITRAQ_4PLEX = 144.10253
 # http://www.unimod.org/modifications_view.php?editid1=730
-SEARCH_MOD_MASS_ITRAQ_8PLEX = 304.205360
+#SEARCH_MOD_MASS_ITRAQ_8PLEX = 304.205360
+# using this instead, from Jimmy. Average of masses for 115/118/119/121 (304.199040) and 113/114/116/117 (304.205360)
+SEARCH_MOD_MASS_ITRAQ_8PLEX = 304.2022
 # http://www.unimod.org/modifications_view.php?editid1=738
 SEARCH_MOD_MASS_TMT_2PLEX = 225.155833
 # http://www.unimod.org/modifications_view.php?editid1=737

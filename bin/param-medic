@@ -58,7 +58,7 @@ def declare_gather_args():
                         default=errorcalc.DEFAULT_CHARGE,
                         help='charge state to consider MS/MS spectra from')
     parser.add_argument('--min-scan-frag-peaks', type=int_greaterthanequalto1_type,
-                        default=errorcalc.DEFAULT_MIN_SCAN_MS2PEAKS,
+                        default=util.MIN_SCAN_PEAKS,
                         help='Minimum fragment peaks an MS/MS scan must contain to be considered')
     parser.add_argument('--top-n-frag-peaks', type=int_greaterthanequalto1_type,
                         default=errorcalc.DEFAULT_TOPN_FRAGPEAKS,
@@ -177,7 +177,7 @@ def main():
             for run_attribute_detector in run_attribute_detectors:
                 run_attribute_detector.next_file()
         logger.debug("Processing input file %s..." % infile.name)
-        for spectrum in generate_spectra(infile):
+        for spectrum in generate_spectra(infile, args.min_scan_frag_peaks):
             binned_spectrum = binning.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
             if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
                 logger.debug("  processed %d total spectra..." % n_spectra_processed)
@@ -240,7 +240,7 @@ def main():
         print("WARNING: only %d spectra were analyzed. Confidence in all assessments is low.")
 
 
-def generate_spectra(spectra_file):
+def generate_spectra(spectra_file, min_scan_frag_peaks):
     """
     a generator for spectra from a .ms2 or .mzML file
     :param spectra_file:
@@ -257,7 +257,9 @@ def generate_spectra(spectra_file):
         raise ValueError('generate_spectra, can\'t determine file type from name. Name=%s' % spectra_file.name)
 
     for spectrum in io_module.read_ms2_scans(handle):
-        yield spectrum
+        # check peak count against threshold
+        if len(spectrum.mz_array) >= min_scan_frag_peaks:
+            yield spectrum
 
 start_time = datetime.now()
 logger.debug("Start time: %s" % start_time)

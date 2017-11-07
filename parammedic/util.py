@@ -17,6 +17,9 @@ HYDROGEN_MASS = 1.00794
 MOD_TYPE_KEY_NTERM = "NTERM"
 MOD_TYPE_KEY_CTERM = "CTERM"
 
+# minimum number of peaks an MS/MS spectrum must have in order to be used in any analysis
+MIN_SCAN_PEAKS = 40
+
 # unmodified masses of each amino acid
 AA_UNMOD_MASSES = {
     'A': 71.03711,
