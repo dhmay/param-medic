@@ -36,7 +36,7 @@ def declare_gather_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('infiles', type=argparse.FileType('r'), nargs='+',
                         help='input .mzML or .ms2 file(s). If multiple files are specified, \
-                        they will be processed together')
+                        they may be processed separately or together')
 
     parser.add_argument('--min-precursor-mz', type=float_greaterthanequalto0_type,
                         default=errorcalc.DEFAULT_MIN_MZ_FOR_BIN_PRECURSOR,
@@ -78,6 +78,9 @@ def declare_gather_args():
                         default=errorcalc.DEFAULT_MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT,
                         help='minimum number of peak pairs (for precursor or fragment) that must be successfully \
                         paired in order to attempt to estimate error distribution')
+    parser.add_argument('--process-together', action="store_true",
+                        help='process multiple files as though they were a single file (default: process \
+                         multiple files separately)')
     parser.add_argument('--noerrorcalc', action="store_true",
                         help='suppress precursor and fragment error calculation')
     parser.add_argument('--nomodinference', action="store_true",
@@ -89,7 +92,7 @@ def declare_gather_args():
     parser.add_argument('--version', action='version', version='%(prog)s {version}'.format(version=__version__))
 
     # these parameters are for development
-    parser.add_argument('--maxspectra', type=int, help='Maximum spectra to process')
+    parser.add_argument('--maxspectra', type=int, help='Maximum spectra to process per file (or total, if process-together)')
 
     return parser.parse_args()
 
@@ -144,100 +147,116 @@ def main():
 
     script_start_time = datetime.now()
     logger.debug("Start time: %s" % script_start_time)
-
-    error_calculator = None
-    run_attribute_detectors = []
-    modification_detectors = []
-    if not args.noerrorcalc:
-        error_calculator = errorcalc.ErrorCalculator(min_precursor_mz=args.min_precursor_mz,
-                                                     max_precursor_mz=args.max_precursor_mz,
-                                                     min_frag_mz=args.min_frag_mz,
-                                                     max_frag_mz=args.max_frag_mz,
-                                                     charge=args.charge,
-                                                     min_scan_frag_peaks=args.min_scan_frag_peaks,
-                                                     topn_frag_peaks=args.top_n_frag_peaks,
-                                                     min_common_frag_peaks=args.min_common_frag_peaks,
-                                                     pair_topn_frag_peaks=args.pair_top_n_frag_peaks,
-                                                     max_scan_separation=args.max_scan_separation,
-                                                     max_precursor_deltappm=args.max_precursor_delta_ppm,
-                                                     min_peakpairs=args.min_peak_pairs)
-        run_attribute_detectors.append(error_calculator)
-
-    if not args.nomodinference:
-        silac_detector = mod_inference.SILACDetector()
-        reporter_detector = mod_inference.ReporterIonProportionCalculator()
-        phospho_detector = mod_inference.PhosphoLossProportionCalculator()
-        modification_detectors.extend([silac_detector, reporter_detector, phospho_detector])
-    run_attribute_detectors.extend(modification_detectors)
-
-    n_spectra_processed = 0
-    is_first_file = True
-    for infile in args.infiles:
-        if not is_first_file:
-            for run_attribute_detector in run_attribute_detectors:
-                run_attribute_detector.next_file()
-        logger.debug("Processing input file %s..." % infile.name)
-        for spectrum in generate_spectra(infile, args.min_scan_frag_peaks):
-            binned_spectrum = binning.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
-            if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
-                logger.debug("  processed %d total spectra..." % n_spectra_processed)
-            for run_attribute_detector in run_attribute_detectors:
-                run_attribute_detector.process_spectrum(spectrum, binned_spectrum)
-            n_spectra_processed += 1
-            if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
-                logger.info("Stopping early after %d spectra." % n_spectra_processed)
-                break
-        infile.close()
-        is_first_file = False
-        if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
-            break
-    if n_spectra_processed == 0:
-        print("No spectra found! Quitting.")
-        quit(1)
-
-    print("Processed all spectra. Summarizing...")
-    detected_modifications = []
-    for modification_detector in modification_detectors:
-        detected_modifications.extend(modification_detector.summarize())
-    search_parameter_recommendations = []
-    if error_calculator:
-        search_parameter_recommendations.extend(error_calculator.summarize())
-    search_parameter_recommendations.extend(detected_modifications)
-
-    if args.enzyme:
-        # go back through the input files
-        print("Inferring enzyme...")
-        n_spectra_processed = 0
-        enzyme_detector = enzyme_inference.EnzymeDetector(detected_modifications)
-        is_first_file = True
+    
+    # each member of file_groups is a list of files that will be processed together
+    infile_groups = []
+    if args.process_together:
+        # process all files as a single group
+        infile_groups.append(args.infiles)
+    else:
+        # process each file separately
         for infile in args.infiles:
-            print("Processing input file %s..." % infile.name)
-            reopened_infile = open(infile.name)
+            infile_groups.append([infile])
+
+    if args.process_together:
+        print("Processing all input files together.")
+    elif len(infile_groups) > 1:
+        print("Processing input files separately.")
+        
+    for infile_group in infile_groups:
+        error_calculator = None
+        run_attribute_detectors = []
+        modification_detectors = []
+        if not args.noerrorcalc:
+            error_calculator = errorcalc.ErrorCalculator(min_precursor_mz=args.min_precursor_mz,
+                                                         max_precursor_mz=args.max_precursor_mz,
+                                                         min_frag_mz=args.min_frag_mz,
+                                                         max_frag_mz=args.max_frag_mz,
+                                                         charge=args.charge,
+                                                         min_scan_frag_peaks=args.min_scan_frag_peaks,
+                                                         topn_frag_peaks=args.top_n_frag_peaks,
+                                                         min_common_frag_peaks=args.min_common_frag_peaks,
+                                                         pair_topn_frag_peaks=args.pair_top_n_frag_peaks,
+                                                         max_scan_separation=args.max_scan_separation,
+                                                         max_precursor_deltappm=args.max_precursor_delta_ppm,
+                                                         min_peakpairs=args.min_peak_pairs)
+            run_attribute_detectors.append(error_calculator)
+    
+        if not args.nomodinference:
+            silac_detector = mod_inference.SILACDetector()
+            reporter_detector = mod_inference.ReporterIonProportionCalculator()
+            phospho_detector = mod_inference.PhosphoLossProportionCalculator()
+            modification_detectors.extend([silac_detector, reporter_detector, phospho_detector])
+        run_attribute_detectors.extend(modification_detectors)
+    
+        n_spectra_processed = 0
+        is_first_file = True
+        for infile in infile_group:
             if not is_first_file:
                 for run_attribute_detector in run_attribute_detectors:
                     run_attribute_detector.next_file()
-            logger.debug("Processing input file %s..." % infile.name)
-            for spectrum in generate_spectra(reopened_infile):
+            logger.info("Processing input file %s..." % infile.name)
+            for spectrum in generate_spectra(infile, args.min_scan_frag_peaks):
                 binned_spectrum = binning.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
                 if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
                     logger.debug("  processed %d total spectra..." % n_spectra_processed)
-                enzyme_detector.process_spectrum(spectrum, binned_spectrum)
+                for run_attribute_detector in run_attribute_detectors:
+                    run_attribute_detector.process_spectrum(spectrum, binned_spectrum)
                 n_spectra_processed += 1
                 if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
                     logger.info("Stopping early after %d spectra." % n_spectra_processed)
                     break
-            reopened_infile.close()
+            infile.close()
             is_first_file = False
-        print("Enzyme: %s" % enzyme_detector.summarize())
-
-    if search_parameter_recommendations:
-        print("\nSearch parameter recommendations:")
-        for modification in search_parameter_recommendations:
-            print(modification)
-    else:
-        print("No modifications detected requiring search parameter changes.")
-    if n_spectra_processed < MIN_SPECTRA_FOR_CONFIDENCE:
-        print("WARNING: only %d spectra were analyzed. Confidence in all assessments is low.")
+            if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
+                break
+        if n_spectra_processed == 0:
+            print("No spectra found! Quitting.")
+            quit(1)
+    
+        logger.debug("Processed all spectra. Summarizing...")
+        detected_modifications = []
+        for modification_detector in modification_detectors:
+            detected_modifications.extend(modification_detector.summarize())
+        search_parameter_recommendations = []
+        if error_calculator:
+            search_parameter_recommendations.extend(error_calculator.summarize())
+        search_parameter_recommendations.extend(detected_modifications)
+    
+        if args.enzyme:
+            # go back through the input files
+            print("Inferring enzyme...")
+            n_spectra_processed = 0
+            enzyme_detector = enzyme_inference.EnzymeDetector(detected_modifications)
+            is_first_file = True
+            for infile in infile_group:
+                print("Processing input file %s..." % infile.name)
+                reopened_infile = open(infile.name)
+                if not is_first_file:
+                    for run_attribute_detector in run_attribute_detectors:
+                        run_attribute_detector.next_file()
+                logger.debug("Processing input file %s..." % infile.name)
+                for spectrum in generate_spectra(reopened_infile):
+                    binned_spectrum = binning.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
+                    if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
+                        logger.debug("  processed %d total spectra..." % n_spectra_processed)
+                    enzyme_detector.process_spectrum(spectrum, binned_spectrum)
+                    n_spectra_processed += 1
+                    if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
+                        logger.info("Stopping early after %d spectra." % n_spectra_processed)
+                        break
+                reopened_infile.close()
+                is_first_file = False
+            print("Enzyme: %s" % enzyme_detector.summarize())
+    
+        if search_parameter_recommendations:
+            print("\nSearch parameter recommendations:")
+            for modification in search_parameter_recommendations:
+                print(modification)
+        else:
+            print("No modifications detected requiring search parameter changes.")
+        if n_spectra_processed < MIN_SPECTRA_FOR_CONFIDENCE:
+            print("WARNING: only %d spectra were analyzed. Confidence in all assessments is low.")
 
 
 def generate_spectra(spectra_file, min_scan_frag_peaks):
