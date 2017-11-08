@@ -31,9 +31,9 @@ __version__ = ""
 # For lysine three-plex experiments, 4,4,5,5-D4 L-lysine and 13C6 15N2 L-lysine are used to
 # generate peptides with 4- and 8-Da mass shifts, respectively, compared to peptides generated
 # with light lysine.
-SILAC_MOD_BIN_DISTANCES = [4, 6, 8]
+SILAC_MOD_BIN_DISTANCES = [4, 6, 8, 10]
 # z-score cutoff above which we consider a particular SILAC separation to be present
-SILAC_ZSCORE_CUTOFF = 6.0
+SILAC_ZSCORE_CUTOFF = 4.0
 
 
 # TMT constants
@@ -106,16 +106,22 @@ SEARCH_MOD_MASS_ITRAQ_8PLEX = 304.2022
 SEARCH_MOD_MASS_TMT_2PLEX = 225.155833
 # http://www.unimod.org/modifications_view.php?editid1=737
 SEARCH_MOD_MASS_TMT_6PLEX = 229.162932
-# http://www.unimod.org/modifications_view.php?editid1=481
-SEARCH_MOD_MASS_SILAC_4DA = 4.0246
-# http://www.unimod.org/modifications_view.php?editid1=188
-SEARCH_MOD_MASS_SILAC_6DA = 6.020129
-# http://www.unimod.org/modifications_view.php?editid1=259
-SEARCH_MOD_MASS_SILAC_8DA = 8.014199
 # http://www.unimod.org/modifications_view.php?editid1=21
 SEARCH_MOD_MASS_PHOSPHO = 79.966331
 
+# maps giving exact mass difference for nominal mass differences for K and R labels.
+# One suggestion is made at random from the options in Unimod
+SILAC_MOD_K_EXACTMASS_MAP = {
+    4: 4.025107,  # http://www.unimod.org/modifications_view.php?editid1=481
+    6: 6.020129,  # http://www.unimod.org/modifications_view.php?editid1=188
+    8: 8.014199,  # http://www.unimod.org/modifications_view.php?editid1=259
+    10: 10.008269  # http://www.unimod.org/modifications_view.php?editid1=267
+}
 
+SILAC_MOD_R_EXACTMASS_MAP = {
+    6: 6.020129,  # http://www.unimod.org/modifications_view.php?editid1=188
+    10: 10.008269  # http://www.unimod.org/modifications_view.php?editid1=267
+}
 
 logger = logging.getLogger(__name__)
 
@@ -450,18 +456,14 @@ class SILACDetector(RunAttributeDetector):
                 significant_separations.append(separation)
                 print("SILAC: %dDa separation detected." % separation)
                 # figure out the exact appropriate mass for search
-                if separation == 4:
-                    varmod_mass = SEARCH_MOD_MASS_SILAC_4DA
-                elif separation == 6:
-                    varmod_mass = SEARCH_MOD_MASS_SILAC_6DA
-                elif separation == 8:
-                    varmod_mass = SEARCH_MOD_MASS_SILAC_8DA
-                else:
+                if separation not in SILAC_MOD_K_EXACTMASS_MAP and separation not in SILAC_MOD_R_EXACTMASS_MAP:
                     raise ValueError('Unknown SILAC separation %d' % separation)
-                result.name_value_pairs['SILAC_%dDa_present' % separation] = 'T'
 
-                search_modifications.append(util.Modification("K", varmod_mass, True))
-                search_modifications.append(util.Modification("R", varmod_mass, True))
+                if separation in SILAC_MOD_K_EXACTMASS_MAP:
+                    search_modifications.append(util.Modification("K", SILAC_MOD_K_EXACTMASS_MAP[separation], True))
+                if separation in SILAC_MOD_R_EXACTMASS_MAP:
+                    search_modifications.append(util.Modification("R", SILAC_MOD_R_EXACTMASS_MAP[separation], True))
+                result.name_value_pairs['SILAC_%dDa_present' % separation] = 'T'
             else:
                 result.name_value_pairs['SILAC_%dDa_present' % separation] = 'F'
             result.name_value_pairs['SILAC_%dDa_statistic' % separation] = str(zscore_to_control)

@@ -293,7 +293,7 @@ def trim_val(x):
     """
     if "." in x:
         try:
-            return "%.5f" % float(x)
+            return "%.4f" % float(x)
         except ValueError:
             pass
     return x
