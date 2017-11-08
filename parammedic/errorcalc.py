@@ -494,7 +494,7 @@ class ErrorCalculator(RunAttributeDetector):
             search_param_messages.append("Precursor error: %.2f ppm" % precursor_prediction_ppm)
         if not failed_fragment:
             search_param_messages.append("Fragment bin size: %.4f Th" % fragment_prediction_th)
-        return search_param_messages
+        return search_param_messages, precursor_sigma_ppm, frag_sigma_ppm, precursor_prediction_ppm, fragment_prediction_th
 
     def next_file(self):
         """

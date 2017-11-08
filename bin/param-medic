@@ -13,6 +13,7 @@ from datetime import datetime
 from parammedic import errorcalc, ms2_io, mzml_io, mod_inference, enzyme_inference, util, binning
 from parammedic import __version__
 import gzip
+from collections import OrderedDict
 
 __author__ = "Damon May"
 __copyright__ = "Copyright (c) 2016 Damon May"
@@ -162,7 +163,8 @@ def main():
         print("Processing all input files together.")
     elif len(infile_groups) > 1:
         print("Processing input files separately.")
-        
+
+    output_name_value_dicts = []
     for infile_group in infile_groups:
         error_calculator = None
         run_attribute_detectors = []
@@ -215,12 +217,30 @@ def main():
             quit(1)
     
         logger.debug("Processed all spectra. Summarizing...")
-        detected_modifications = []
-        for modification_detector in modification_detectors:
-            detected_modifications.extend(modification_detector.summarize())
+        output_name_value_dict = OrderedDict()
+        output_name_value_dicts.append(output_name_value_dict)
+        if len(infile_group) == 1:
+            output_name_value_dict['file'] = infile_group[0].name
+        else:
+            output_name_value_dict['file'] = 'multiple'
+
         search_parameter_recommendations = []
         if error_calculator:
-            search_parameter_recommendations.extend(error_calculator.summarize())
+            errorcalc_messages, precursor_sigma_ppm, frag_sigma_ppm, precursor_prediction_ppm, fragment_prediction_th = error_calculator.summarize()
+            search_parameter_recommendations.extend(errorcalc_messages)
+            # assemble error-calculation output. If a prediction failed the value will be None, so reformat
+            output_name_value_dict['precursor_prediction_ppm'] = str(precursor_prediction_ppm) if precursor_prediction_ppm is not None else 'ERROR'
+            output_name_value_dict['precursor_sigma_ppm'] = str(precursor_sigma_ppm) if precursor_sigma_ppm is not None else 'ERROR'
+            output_name_value_dict['fragment_prediction_th'] = str(fragment_prediction_th) if fragment_prediction_th is not None else 'ERROR'
+            output_name_value_dict['fragment_sigma_ppm'] = str(frag_sigma_ppm) if frag_sigma_ppm is not None else 'ERROR'
+
+        detected_modifications = []
+        for modification_detector in modification_detectors:
+            detector_result = modification_detector.summarize()
+            detected_modifications.extend(detector_result.search_modifications)
+            for name in detector_result.name_value_pairs:
+                output_name_value_dict[name] = detector_result.name_value_pairs[name]
+
         search_parameter_recommendations.extend(detected_modifications)
     
         if args.enzyme:
@@ -257,6 +277,11 @@ def main():
             print("No modifications detected requiring search parameter changes.")
         if n_spectra_processed < MIN_SPECTRA_FOR_CONFIDENCE:
             print("WARNING: only %d spectra were analyzed. Confidence in all assessments is low.")
+
+    # print tab-separated output
+    print("\t".join(output_name_value_dicts[0].keys()))
+    for outdict in output_name_value_dicts:
+        print("\t".join(outdict[x] for x in outdict))
 
 
 def generate_spectra(spectra_file, min_scan_frag_peaks):

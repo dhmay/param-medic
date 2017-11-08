@@ -166,6 +166,7 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         all spectra
         :return: 
         """
+
         control_mean = np.mean(self.sums_proportions_per_controlpeak.values())
         control_sd = np.std(self.sums_proportions_per_controlpeak.values())
         logger.debug("Phospho control peaks (mean=%.03f):" % control_mean)
@@ -179,9 +180,16 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         if zscore_to_control > PHOSPHO_ZSCORE_CUTOFF:
             print("Phosphorylation: detected")
             search_modifications.append(util.Modification(util.MOD_TYPE_KEY_CTERM, SEARCH_MOD_MASS_PHOSPHO, True))
+            phospho_is_present = True
         else:
             print("Phosphorylation: not detected")
-        return search_modifications
+            phospho_is_present = False
+
+        result = util.RunAttributeResult()
+        result.name_value_pairs['phospho_present'] = 'T' if phospho_is_present else 'F'
+        result.name_value_pairs['phospho_statistic'] = str(zscore_to_control)
+        result.search_modifications = search_modifications
+        return result
 
 
 class ReporterIonProportionCalculator(RunAttributeDetector):
@@ -252,6 +260,7 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             logger.debug("  %d: %.02f" % (control_bin + 1, self.reportertype_bin_sum_proportion_map['control'][control_bin]))
         logger.debug("Reporter ion control bin mean: %.02f" % control_bin_mean)
         significant_reporter_types = set()
+        reportertype_tstatistic_map = {}
         for reporter_type in self.reportertype_bin_sum_proportion_map:
             if reporter_type == 'control':
                 continue
@@ -283,12 +292,17 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
 #                            (n_signif_ions_this_type, reporter_type))
             logger.debug("%s bin mean: %.02f" % (reporter_type, reporter_bin_mean))
             t_statistic = ttest_ind(reporter_bin_sums, control_bin_sums, equal_var=False)[0]
+            reportertype_tstatistic_map[reporter_type] = t_statistic
             ratio = reporter_bin_mean / control_bin_mean
             logger.debug("%s, overall: reporter/control mean ratio: %.04f. t-statistic: %.04f" %
                          (reporter_type, ratio, t_statistic))
             if t_statistic > REPORTER_ION_TSTAT_THRESHOLDS_MAP[reporter_type]:
                 significant_reporter_types.add(reporter_type)
+                
+        # create result
         search_modifications = []
+        result = util.RunAttributeResult()
+        
         # handle iTRAQ
         if "iTRAQ_8plex" in significant_reporter_types:
             print("iTRAQ: 8-plex reporter ions detected")
@@ -296,14 +310,19 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_ITRAQ_8PLEX, True))
             if "iTRAQ_4plex" not in significant_reporter_types:
                 logger.warn("    No iTRAQ 4-plex reporters detected, only 8-plex.")
+            itraq8_is_present = True
+            itraq4_is_present = False
         elif "iTRAQ_4plex" in significant_reporter_types:
             print("iTRAQ: 4-plex reporter ions detected")
             # 8plex mass same as 4plex, more or less
             search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_ITRAQ_4PLEX, True))
             search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_ITRAQ_4PLEX, True))
+            itraq8_is_present = False
+            itraq4_is_present = True
         else:
             print("iTRAQ: no reporter ions detected")
-        has_itraq = len(search_modifications) > 0
+            itraq8_is_present = False
+            itraq4_is_present = False
 
         # handle TMT
         if "TMT_6plex" in significant_reporter_types:
@@ -312,14 +331,30 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_TMT_6PLEX, True))
             if "TMT_2plex" not in significant_reporter_types:
                 logger.warn("    No TMT 2-plex reporters detected, only 6-plex")
+            tmt6_is_present = True
+            tmt2_is_present = False
         elif "TMT_2plex" in significant_reporter_types:
             print("TMT: 2-plex reporter ions detected")
             search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_TMT_2PLEX, True))
             search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_TMT_2PLEX, True))
+            tmt6_is_present = False
+            tmt2_is_present = True
         else:
             print("TMT: no reporter ions detected")
-        return search_modifications
+            tmt6_is_present = False
+            tmt2_is_present = False
+            
+        result.name_value_pairs['iTRAQ_8plex_present'] = 'T' if itraq8_is_present else 'F'
+        result.name_value_pairs['iTRAQ_8plex_statistic'] = str(reportertype_tstatistic_map['iTRAQ_8plex'])
+        result.name_value_pairs['iTRAQ_4plex_present'] = 'T' if itraq4_is_present else 'F'
+        result.name_value_pairs['iTRAQ_4plex_statistic'] = str(reportertype_tstatistic_map['iTRAQ_4plex'])
+        result.name_value_pairs['TMT_6plex_present'] = 'T' if tmt6_is_present else 'F'
+        result.name_value_pairs['TMT_6plex_statistic'] = str(reportertype_tstatistic_map['TMT_6plex'])
+        result.name_value_pairs['TMT_2plex_present'] = 'T' if tmt2_is_present else 'F'
+        result.name_value_pairs['TMT_2plex_statistic'] = str(reportertype_tstatistic_map['TMT_2plex'])
 
+        result.search_modifications = search_modifications
+        return result
 
 
 class SILACDetector(RunAttributeDetector):
@@ -405,6 +440,9 @@ class SILACDetector(RunAttributeDetector):
         significant_separations = []
         search_modifications = []
         logger.debug("SILAC: Ratios of mass separations to control separations:")
+
+        result = util.RunAttributeResult()
+
         for separation in SILAC_MOD_BIN_DISTANCES:
             proportion_to_control = float(counts_with_separations[separation]) / mean_control_count
             zscore_to_control = float(counts_with_separations[separation] - mean_control_count) / control_sd
@@ -412,13 +450,21 @@ class SILACDetector(RunAttributeDetector):
                 significant_separations.append(separation)
                 print("SILAC: %dDa separation detected." % separation)
                 # figure out the exact appropriate mass for search
-                varmod_mass = SEARCH_MOD_MASS_SILAC_4DA
-                if separation == 6:
+                if separation == 4:
+                    varmod_mass = SEARCH_MOD_MASS_SILAC_4DA
+                elif separation == 6:
                     varmod_mass = SEARCH_MOD_MASS_SILAC_6DA
                 elif separation == 8:
                     varmod_mass = SEARCH_MOD_MASS_SILAC_8DA
+                else:
+                    raise ValueError('Unknown SILAC separation %d' % separation)
+                result.name_value_pairs['SILAC_%dDa_present' % separation] = 'T'
+
                 search_modifications.append(util.Modification("K", varmod_mass, True))
                 search_modifications.append(util.Modification("R", varmod_mass, True))
+            else:
+                result.name_value_pairs['SILAC_%dDa_present' % separation] = 'F'
+            result.name_value_pairs['SILAC_%dDa_statistic' % separation] = str(zscore_to_control)
             logger.debug("SILAC:     %dDa: %.05f (z=%.03f)" % (separation, proportion_to_control,
                                                                zscore_to_control))
 
@@ -428,6 +474,6 @@ class SILACDetector(RunAttributeDetector):
             # 6Da separation is not compatible with 4Da and 8Da
             if 6 in significant_separations and len(significant_separations) > 1:
                 logger.warn("Detected incompatible SILAC separations: %s" % str(significant_separations))
-        return search_modifications
-
+        result.search_modifications = search_modifications
+        return result
 

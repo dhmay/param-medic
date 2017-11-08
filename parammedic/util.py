@@ -6,6 +6,7 @@ Utility code used by multiple modules
 # Separation between Averagine peaks. This is used for binning spectra
 import abc
 import logging
+from collections import OrderedDict
 
 AVERAGINE_PEAK_SEPARATION = 1.0005079
 
@@ -95,7 +96,7 @@ class RunAttributeDetector(object):
     def summarize(self):
         """
         This method gets called after all spectra are processed
-        :return: a list of Modifications to be used in search 
+        :return: a list of RunAttributeResults
         """
         return
     
@@ -106,6 +107,16 @@ class RunAttributeDetector(object):
         :return: 
         """
         return
+
+
+class RunAttributeResult(object):
+    """
+    Holds a result of a RunAttributeDetector analysis
+    """
+
+    def __init__(self):
+        self.search_modifications = []
+        self.name_value_pairs = OrderedDict()
 
 
 def calc_mplush_from_mz_charge(mz, charge):
