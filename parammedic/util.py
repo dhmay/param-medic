@@ -100,14 +100,6 @@ class RunAttributeDetector(object):
         """
         return
     
-    @abc.abstractmethod
-    def next_file(self):
-        """
-        Register that a new file is being processed
-        :return: 
-        """
-        return
-
 
 class RunAttributeResult(object):
     """
@@ -115,8 +107,8 @@ class RunAttributeResult(object):
     """
 
     def __init__(self):
-        self.search_modifications = []
-        self.name_value_pairs = OrderedDict()
+        self.search_modifications = []  # modifications recommended as a result of analysis
+        self.name_value_pairs = OrderedDict()  # name-value pairs to output that summarize the analysis
 
 
 def calc_mplush_from_mz_charge(mz, charge):

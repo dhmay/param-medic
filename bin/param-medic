@@ -167,7 +167,9 @@ def main():
     output_name_value_dicts = []
     for infile_group in infile_groups:
         error_calculator = None
+        # list of all run attribute detectors
         run_attribute_detectors = []
+        # list of just the modification detectors (if any)
         modification_detectors = []
         if not args.noerrorcalc:
             error_calculator = errorcalc.ErrorCalculator(min_precursor_mz=args.min_precursor_mz,
@@ -183,7 +185,8 @@ def main():
                                                          max_precursor_deltappm=args.max_precursor_delta_ppm,
                                                          min_peakpairs=args.min_peak_pairs)
             run_attribute_detectors.append(error_calculator)
-    
+
+        # unless mod inference is suppressed, add each of the modification detectors
         if not args.nomodinference:
             silac_detector = mod_inference.SILACDetector()
             reporter_detector = mod_inference.ReporterIonProportionCalculator()
@@ -192,24 +195,25 @@ def main():
         run_attribute_detectors.extend(modification_detectors)
     
         n_spectra_processed = 0
-        is_first_file = True
+        # process each group of input files
         for infile in infile_group:
-            if not is_first_file:
-                for run_attribute_detector in run_attribute_detectors:
-                    run_attribute_detector.next_file()
             logger.info("Processing input file %s..." % infile.name)
             for spectrum in generate_spectra(infile, args.min_scan_frag_peaks):
-                binned_spectrum = binning.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
+                # report progress
                 if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
                     logger.debug("  processed %d total spectra..." % n_spectra_processed)
+                # bin the spectrum peaks
+                binned_spectrum = binning.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
+                # run each of the detectors on the binned peaks
                 for run_attribute_detector in run_attribute_detectors:
                     run_attribute_detector.process_spectrum(spectrum, binned_spectrum)
                 n_spectra_processed += 1
+
+                # if stopping early, see if it's time to stop
                 if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
                     logger.info("Stopping early after %d spectra." % n_spectra_processed)
                     break
             infile.close()
-            is_first_file = False
             if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
                 break
         if n_spectra_processed == 0:
@@ -217,13 +221,17 @@ def main():
             quit(1)
     
         logger.debug("Processed all spectra. Summarizing...")
+        # build an OrderedDict of all the stuff to output
         output_name_value_dict = OrderedDict()
         output_name_value_dicts.append(output_name_value_dict)
         if len(infile_group) == 1:
+            # just one file, use its name
             output_name_value_dict['file'] = infile_group[0].name
         else:
+            # more than one file, so just call it 'multiple'
             output_name_value_dict['file'] = 'multiple'
 
+        # accumulate all the search parameter recommendations
         search_parameter_recommendations = []
         if error_calculator:
             errorcalc_messages, precursor_sigma_ppm, frag_sigma_ppm, precursor_prediction_ppm, fragment_prediction_th = error_calculator.summarize()
@@ -234,15 +242,16 @@ def main():
             output_name_value_dict['fragment_prediction_th'] = str(fragment_prediction_th) if fragment_prediction_th is not None else 'ERROR'
             output_name_value_dict['fragment_sigma_ppm'] = str(frag_sigma_ppm) if frag_sigma_ppm is not None else 'ERROR'
 
+        # check for each of the modifications
         detected_modifications = []
         for modification_detector in modification_detectors:
             detector_result = modification_detector.summarize()
             detected_modifications.extend(detector_result.search_modifications)
             for name in detector_result.name_value_pairs:
                 output_name_value_dict[name] = detector_result.name_value_pairs[name]
-
         search_parameter_recommendations.extend(detected_modifications)
-    
+
+        # conditionally analyze enzyme
         if args.enzyme:
             # go back through the input files
             print("Inferring enzyme...")
