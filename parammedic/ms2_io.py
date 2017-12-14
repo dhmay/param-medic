@@ -148,7 +148,7 @@ def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=Fals
             fragment_intensities.append(float(chunks[1]))
         # not a recognized line type. Barf.
         else:
-            print("Bad line:\n*\n%s\n*" % line)
+            logger.error("Bad line:\n*\n%s\n*" % line)
             raise ValueError("len(chunks) == %d\n" % len(chunks))
 
     if scan_number and (retention_time or not require_rt) and fragment_mzs and \

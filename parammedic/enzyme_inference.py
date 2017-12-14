@@ -105,9 +105,9 @@ class EnzymeDetector(RunAttributeDetector):
         
         mod_locations = set()
         for modification in sample_modifications:
-            print("Accounting for modification: %s" % modification)
+            logger.info("Accounting for modification: %s" % modification)
             if modification.location in mod_locations:
-                print("WARNING! Multiple modifications on %s" % modification.location)
+                logger.info("WARNING! Multiple modifications on %s" % modification.location)
             if modification.location == util.MOD_TYPE_KEY_CTERM:
                 # todo: what if it's variable?
                 self.cterm_mass += modification.mass_diff
@@ -193,7 +193,7 @@ class EnzymeDetector(RunAttributeDetector):
         :return: 
         """
         if self.n_total_spectra < MIN_SPECTRA_FOR_CONFIDENCE:
-            print("WARNING: only %d spectra were analyzed. Enzyme determination is suspect." % self.n_total_spectra)
+            logger.info("WARNING: only %d spectra were analyzed. Enzyme determination is suspect." % self.n_total_spectra)
         proportion_lessthan_onethirdprecursor = self.sum_proportion_ms2_signal_onethird_precursor / self.n_total_spectra
         logger.debug("Signal proportion under 1/3 precursor mz: %f" % proportion_lessthan_onethirdprecursor)
         if proportion_lessthan_onethirdprecursor > PROPORTION_ONETHIRDPRECURSOR_Y1_THRESHOLD:
@@ -255,12 +255,12 @@ class EnzymeDetector(RunAttributeDetector):
 
         # Didn't detect anything else. If we can say it's "likely" trypsin, do so
         if trypsin_min_zscore > MIN_TRYPSIN_ZSCORE_LIKELY_THRESHOLD:
-            print("Trypsin test passes bare minimum threshold, and no other enzyme detected.")
+            logger.info("Trypsin test passes bare minimum threshold, and no other enzyme detected.")
             return ENZYME_STR_LIKELY_TRYPSIN
 
         # We got nothin'. Give the user the information so they can decide.
-        print("Unable to determine enzyme. Summary of each amino acid:")
+        logger.info("Unable to determine enzyme. Summary of each amino acid:")
         for message in per_aa_messages:
-            print(message)
+            logger.info(message)
         return ENZYME_STR_UNKNOWN
 

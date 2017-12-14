@@ -177,11 +177,11 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         # summarize results
         search_modifications = []
         if zscore_to_control > PHOSPHO_ZSCORE_CUTOFF:
-            print("Phosphorylation: detected")
+            logger.info("Phosphorylation: detected")
             search_modifications.append(util.Modification(util.MOD_TYPE_KEY_CTERM, SEARCH_MOD_MASS_PHOSPHO, True))
             phospho_is_present = True
         else:
-            print("Phosphorylation: not detected")
+            logger.info("Phosphorylation: not detected")
             phospho_is_present = False
 
         result = util.RunAttributeResult()
@@ -287,7 +287,7 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
         
         # handle iTRAQ
         if "iTRAQ_8plex" in significant_reporter_types:
-            print("iTRAQ: 8-plex reporter ions detected")
+            logger.info("iTRAQ: 8-plex reporter ions detected")
             result.search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_ITRAQ_8PLEX, True))
             result.search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_ITRAQ_8PLEX, True))
             if "iTRAQ_4plex" not in significant_reporter_types:
@@ -295,20 +295,20 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             itraq8_is_present = True
             itraq4_is_present = False
         elif "iTRAQ_4plex" in significant_reporter_types:
-            print("iTRAQ: 4-plex reporter ions detected")
+            logger.info("iTRAQ: 4-plex reporter ions detected")
             # 8plex mass same as 4plex, more or less
             result.search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_ITRAQ_4PLEX, True))
             result.search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_ITRAQ_4PLEX, True))
             itraq8_is_present = False
             itraq4_is_present = True
         else:
-            print("iTRAQ: no reporter ions detected")
+            logger.info("iTRAQ: no reporter ions detected")
             itraq8_is_present = False
             itraq4_is_present = False
 
         # handle TMT
         if "TMT_6plex" in significant_reporter_types:
-            print("TMT: 6-plex reporter ions detected")
+            logger.info("TMT: 6-plex reporter ions detected")
             result.search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_TMT_6PLEX, True))
             result.search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_TMT_6PLEX, True))
             if "TMT_2plex" not in significant_reporter_types:
@@ -316,13 +316,13 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             tmt6_is_present = True
             tmt2_is_present = False
         elif "TMT_2plex" in significant_reporter_types:
-            print("TMT: 2-plex reporter ions detected")
+            logger.info("TMT: 2-plex reporter ions detected")
             result.search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_TMT_2PLEX, True))
             result.search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_TMT_2PLEX, True))
             tmt6_is_present = False
             tmt2_is_present = True
         else:
-            print("TMT: no reporter ions detected")
+            logger.info("TMT: no reporter ions detected")
             tmt6_is_present = False
             tmt2_is_present = False
 
@@ -433,7 +433,7 @@ class SILACDetector(RunAttributeDetector):
             zscore_to_control = float(counts_with_separations[separation] - mean_control_count) / control_sd
             if zscore_to_control > SILAC_ZSCORE_CUTOFF:
                 significant_separations.append(separation)
-                print("SILAC: %dDa separation detected." % separation)
+                logger.info("SILAC: %dDa separation detected." % separation)
                 # paranoia
                 if separation not in SILAC_MOD_K_EXACTMASS_MAP and separation not in SILAC_MOD_R_EXACTMASS_MAP:
                     raise ValueError('Unknown SILAC separation %d' % separation)
@@ -452,6 +452,6 @@ class SILACDetector(RunAttributeDetector):
             logger.debug("SILAC:     %dDa: %.05f (z=%.03f)" % (separation, proportion_to_control,
                                                                zscore_to_control))
         if not significant_separations:
-            print("SILAC: no labeling detected")
+            logger.info("SILAC: no labeling detected")
         return result
 

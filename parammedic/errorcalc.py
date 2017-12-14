@@ -476,17 +476,17 @@ class ErrorCalculator(RunAttributeDetector):
         (failed_precursor, precursor_message, failed_fragment, fragment_message, precursor_sigma_ppm, frag_sigma_ppm,
          precursor_prediction_ppm, fragment_prediction_th) = \
             self.calc_masserror_dist()
-        print("Precursor and fragment error summary:")
+        logger.info("Precursor and fragment error summary:")
         if failed_precursor:
-            print("Precursor error calculation failed:")
-            print(precursor_message)
+            logger.info("Precursor error calculation failed:")
+            logger.info(precursor_message)
         else:
-            print('precursor standard deviation: %f ppm' % precursor_sigma_ppm)
+            logger.info('precursor standard deviation: %f ppm' % precursor_sigma_ppm)
         if failed_fragment:
-            print("Fragment error calculation failed:")
-            print(fragment_message)
+            logger.info("Fragment error calculation failed:")
+            logger.info(fragment_message)
         else:
-            print('fragment standard deviation: %f ppm' % frag_sigma_ppm)
+            logger.info('fragment standard deviation: %f ppm' % frag_sigma_ppm)
         logger.debug('')
 
         search_param_messages = []

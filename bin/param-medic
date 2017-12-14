@@ -160,9 +160,9 @@ def main():
             infile_groups.append([infile])
 
     if args.process_together:
-        print("Processing all input files together.")
+        logger.info("Processing all input files together.")
     elif len(infile_groups) > 1:
-        print("Processing input files separately.")
+        logger.info("Processing input files separately.")
 
     output_name_value_dicts = []
     for infile_group in infile_groups:
@@ -217,7 +217,7 @@ def main():
             if (args.maxspectra is not None) and n_spectra_processed >= args.maxspectra:
                 break
         if n_spectra_processed == 0:
-            print("No spectra found! Quitting.")
+            logger.info("No spectra found! Quitting.")
             quit(1)
     
         logger.debug("Processed all spectra. Summarizing...")
@@ -254,12 +254,12 @@ def main():
         # conditionally analyze enzyme
         if args.enzyme:
             # go back through the input files
-            print("Inferring enzyme...")
+            logger.info("Inferring enzyme...")
             n_spectra_processed = 0
             enzyme_detector = enzyme_inference.EnzymeDetector(detected_modifications)
             is_first_file = True
             for infile in infile_group:
-                print("Processing input file %s..." % infile.name)
+                logger.info("Processing input file %s..." % infile.name)
                 reopened_infile = open(infile.name)
                 if not is_first_file:
                     for run_attribute_detector in run_attribute_detectors:
@@ -276,16 +276,16 @@ def main():
                         break
                 reopened_infile.close()
                 is_first_file = False
-            print("Enzyme: %s" % enzyme_detector.summarize())
+            logger.info("Enzyme: %s" % enzyme_detector.summarize())
     
         if search_parameter_recommendations:
-            print("\nSearch parameter recommendations:")
+            logger.info("\nSearch parameter recommendations:")
             for modification in search_parameter_recommendations:
-                print(modification)
+                logger.info(modification)
         else:
-            print("No modifications detected requiring search parameter changes.")
+            logger.info("No modifications detected requiring search parameter changes.")
         if n_spectra_processed < MIN_SPECTRA_FOR_CONFIDENCE:
-            print("WARNING: only %d spectra were analyzed. Confidence in all assessments is low.")
+            logger.info("WARNING: only %d spectra were analyzed. Confidence in all assessments is low.")
 
     # print tab-separated output
     print("\t".join(output_name_value_dicts[0].keys()))
