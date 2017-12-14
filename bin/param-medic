@@ -290,12 +290,14 @@ def main():
     # print tab-separated output
     print("\t".join(output_name_value_dicts[0].keys()))
     for outdict in output_name_value_dicts:
-        print("\t".join(trim_val(outdict[x]) for x in outdict))
+        # if a value is "nan", change it to "ERROR".
+        print("\t".join(format_val(outdict[x]) for x in outdict))
 
 
-def trim_val(x):
+def format_val(x):
     """
     if x looks vaguely like a number, trim it to 5 decimal places. If not, leave it alone.
+    Unless it's "nan", then change it to ERROR.
     This is brittle and silly, but it does the job for this specific use case.
     :param x:
     :return:
@@ -305,6 +307,8 @@ def trim_val(x):
             return "%.4f" % float(x)
         except ValueError:
             pass
+    elif x == 'nan':
+        return 'ERROR'
     return x
 
 
