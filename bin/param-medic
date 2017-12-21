@@ -164,6 +164,7 @@ def main():
     elif len(infile_groups) > 1:
         logger.info("Processing input files separately.")
 
+    # a list of dictionaries filled with the TSV output
     output_name_value_dicts = []
     for infile_group in infile_groups:
         error_calculator = None
@@ -195,6 +196,10 @@ def main():
         run_attribute_detectors.extend(modification_detectors)
     
         n_spectra_processed = 0
+        
+        # map from activation type to count of scans with that type.
+        activationtype_scancount_map = {}
+        
         # process each group of input files
         for infile in infile_group:
             logger.info("Processing input file %s..." % infile.name)
@@ -202,6 +207,13 @@ def main():
                 # report progress
                 if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
                     logger.debug("  processed %d total spectra..." % n_spectra_processed)
+
+                # update the activation type histogram
+                if spectrum.activation_type:
+                    if spectrum.activation_type not in activationtype_scancount_map:
+                        activationtype_scancount_map[spectrum.activation_type] = 0
+                    activationtype_scancount_map[spectrum.activation_type] += 1
+
                 # bin the spectrum peaks
                 binned_spectrum = binning.bin_spectrum(spectrum.mz_array, spectrum.intensity_array)
                 # run each of the detectors on the binned peaks
@@ -277,7 +289,15 @@ def main():
                 reopened_infile.close()
                 is_first_file = False
             logger.info("Enzyme: %s" % enzyme_detector.summarize())
-    
+
+        # if we were able to capture any activation type information, add it to the output
+        if activationtype_scancount_map:
+            for activation_type in activationtype_scancount_map:
+                output_name_value_dict['scancount_activation_%s' % activation_type] = \
+                    str(activationtype_scancount_map[activation_type])
+        else:
+            logger.debug("No activation type information was available in input file(s)")
+
         if search_parameter_recommendations:
             logger.info("\nSearch parameter recommendations:")
             for modification in search_parameter_recommendations:

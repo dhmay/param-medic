@@ -53,6 +53,14 @@ class MSSpectrum(object):
     represents a single MS spectrum
     """
     def __init__(self, scan_number, retention_time, level, mz_array, intensity_array):
+        """
+
+        :param scan_number:
+        :param retention_time:
+        :param level:
+        :param mz_array:
+        :param intensity_array:
+        """
         assert(len(mz_array) == len(intensity_array))
         self.scan_number = scan_number
         self.retention_time = retention_time
@@ -66,10 +74,11 @@ class MS2Spectrum(MSSpectrum):
     represents a single MS/MS spectrum
     """
     def __init__(self, scan_number, retention_time, mz_array, intensity_array,
-                 precursor_mz, charge):
+                 precursor_mz, charge, activation_type=None):
         MSSpectrum.__init__(self, scan_number, retention_time, 2, mz_array, intensity_array)
         self.precursor_mz = precursor_mz
         self.charge = charge
+        self.activation_type = activation_type
 
     def generate_mz_intensity_pairs(self):
         for i in xrange(0, len(self.mz_array)):

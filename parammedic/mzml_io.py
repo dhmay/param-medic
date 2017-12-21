@@ -8,7 +8,6 @@ import logging
 from pyteomics import mzml
 
 import parammedic.util
-from parammedic import errorcalc
 
 
 __author__ = "Damon May"
@@ -71,6 +70,7 @@ def read_scan(scan):
     mz_array = scan['m/z array']
     intensity_array = scan['intensity array']
     retention_time = scan['scanList']['scan'][0]['scan start time']
+
     if ms_level == 1:
         return parammedic.util.MSSpectrum(scan_number, retention_time,
                                           mz_array,
@@ -78,7 +78,6 @@ def read_scan(scan):
     elif ms_level == 2:
         precursor_selected_ion_map = scan['precursorList']['precursor'][0]['selectedIonList']['selectedIon'][0]
         precursor_mz = precursor_selected_ion_map['selected ion m/z']
-        charge = None
         if 'charge state' in precursor_selected_ion_map:
             charge = precursor_selected_ion_map['charge state']
         elif 'possible charge state' in precursor_selected_ion_map:
@@ -86,10 +85,37 @@ def read_scan(scan):
         else:
             raise ValueError("Could not find charge for scan %d" % scan_number)
 
+        # damonmay adding for activation type histogram.
+        # a scan looks like this:
+            # {'count': 2, 'index': 3, 'highest observed m/z': 663.433410644531,
+            # 'm/z array': array([ 101.05975342,  105.96199036,  109.10111237,  111.11677551, ...])}
+            # , dtype=float32), 'precursorList': {'count': 1, 'precursor':
+            # [{'selectedIonList': {'count': 1, 'selectedIon': [{'charge state': 2.0,
+            # 'peak intensity': 6005243.5, 'selected ion m/z': 337.715426720255}]},
+            # 'activation': {'beam-type collision-induced dissociation': '', 'collision energy': 32.0},
+            # 'spectrumRef': 'controllerType=0 controllerNumber=1 scan=3',
+        # etc
+        activation_type = None
+        if 'precursorList' in scan:
+            preclist = scan['precursorList']
+            if 'count' in preclist and preclist['count'] == 1 and \
+                    'precursor' in preclist:
+                precursor = preclist['precursor'][0]
+                if 'activation' in precursor:
+                    # precursor['activation'] is a weird dict that looks like this:
+                    # 'activation': {'beam-type collision-induced dissociation': '', 'collision energy': 25.0}
+                    activation_type_dict = precursor['activation']
+                    # this method if figuring out the activation type seems very brittle.
+                    for key in activation_type_dict:
+                        if activation_type_dict[key] == '' and key != 'collision energy':
+                            activation_type = key
+                        break
+
         return parammedic.util.MS2Spectrum(scan_number, retention_time,
                                            mz_array,
                                            intensity_array,
-                                           precursor_mz, charge)
+                                           precursor_mz, charge,
+                                           activation_type=activation_type)
     else:
         logger.debug("Unhandleable scan level %d" % ms_level)
 
