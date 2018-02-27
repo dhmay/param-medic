@@ -115,9 +115,9 @@ def read_scan(scan):
                     activation_type_dict = precursor['activation']
                     # this method if figuring out the activation type seems very brittle.
                     for key in activation_type_dict:
-                        if activation_type_dict[key] == '' and key != 'collision energy':
+                        if key != 'collision energy':
                             activation_type = key
-                        break
+                            break
 
         return parammedic.util.MS2Spectrum(scan_number, retention_time,
                                            mz_array,
