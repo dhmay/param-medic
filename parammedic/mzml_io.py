@@ -55,7 +55,7 @@ def read_scans(mzml_file, ms_levels=(1, 2)):
                 try:
                     yield read_scan(scan)
                 except ValueError as e:
-                    logger.debug("Warning! Scan with indeterminable charge: %s" % e)
+                    logger.debug("Warning! Failed to read scan: %s" % e)
 
 
 def read_scan(scan):
@@ -66,7 +66,14 @@ def read_scan(scan):
     """
     # see below for the byzantine intricacies of the scan object
     ms_level = scan['ms level']
-    scan_number = int(scan['id'][scan['id'].index('scan=') + 5:])
+    id_field = scan['id']
+    if 'scan=' in id_field:
+        scan_number = int(id_field[id_field.index('scan=') + len('scan='):])
+    elif 'experiment=' in id_field:
+        scan_number = int(id_field[id_field.index('experiment=') + len('experiment='):])
+    else:
+        raise ValueError('cannot parse scan number from id attribute: {}'.format(id_field))
+
     mz_array = scan['m/z array']
     intensity_array = scan['intensity array']
     retention_time = scan['scanList']['scan'][0]['scan start time']
@@ -83,7 +90,8 @@ def read_scan(scan):
         elif 'possible charge state' in precursor_selected_ion_map:
             charge = precursor_selected_ion_map['possible charge state']
         else:
-            raise ValueError("Could not find charge for scan %d" % scan_number)
+            raise ValueError("Could not find charge for scan {}. Fields available: {}".format(
+                scan_number, precursor_selected_ion_map.keys()))
 
         # damonmay adding for activation type histogram.
         # a scan looks like this:
