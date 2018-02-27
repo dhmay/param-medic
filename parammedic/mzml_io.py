@@ -113,7 +113,11 @@ def read_scan(scan):
                     # precursor['activation'] is a weird dict that looks like this:
                     # 'activation': {'beam-type collision-induced dissociation': '', 'collision energy': 25.0}
                     activation_type_dict = precursor['activation']
-                    # this method if figuring out the activation type seems very brittle.
+                    # this method if figuring out the activation type is very brittle.
+                    # because the keys in this dictionary aren't ordered, if there are multiple keys
+                    # I will simply assign the first one I pull out, which is basically at random.
+                    # Then again, there really shouldn't be multiple activation type cvParams that
+                    # aren't "collision energy". Then again, I'm sure we'll encounter them eventually.
                     for key in activation_type_dict:
                         if key != 'collision energy':
                             activation_type = key
