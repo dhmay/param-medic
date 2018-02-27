@@ -36,29 +36,35 @@ def read_ms2_scans(mzml_file):
     return read_scans(mzml_file, [2])
 
 
-def read_scans(mzml_file, ms_levels=(1, 2)):
+def read_scans(mzml_file, ms_levels=(1, 2), should_renumber_ifmissing=True):
     """
     yields all spectra from an mzML file with level in ms_levels, or
     all processable scans if ms_levels not specified
     :param mzml_file:
     :param ms_levels:
     :param min_pprophet:
+    :param should_renumber_ifmissing: If this is true and we're unable to get integer
+    scan numbers from the spactra, renumber them from 1 to N. If false, fail if we
+    can't parse an integer from the scan number field
     :return:
     """
     with mzml.MzML(mzml_file) as reader:
+        cur_scanidx_1based = 0
         for scan in reader:
+            cur_scanidx_1based += 1
             if scan['ms level'] in ms_levels:
                 # ignore this scan if we get a ValueError.
                 # ValueError is only raised if we can't infer charge.
                 # If we still have enough scans where we could infer charge, OK to
                 # ignore these.
                 try:
-                    yield read_scan(scan)
+                    yield read_scan(scan,
+                                    default_scan_number=cur_scanidx_1based if should_renumber_ifmissing else None)
                 except ValueError as e:
                     logger.debug("Warning! Failed to read scan: %s" % e)
 
 
-def read_scan(scan):
+def read_scan(scan, default_scan_number=None):
     """
     Read a single scan into our representation
     :param scan:
@@ -69,9 +75,10 @@ def read_scan(scan):
     id_field = scan['id']
     if 'scan=' in id_field:
         scan_number = int(id_field[id_field.index('scan=') + len('scan='):])
-    elif 'experiment=' in id_field:
-        scan_number = int(id_field[id_field.index('experiment=') + len('experiment='):])
+    elif default_scan_number is not None:
+        scan_number = default_scan_number
     else:
+
         raise ValueError('cannot parse scan number from id attribute: {}'.format(id_field))
 
     mz_array = scan['m/z array']
