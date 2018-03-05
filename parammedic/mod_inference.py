@@ -420,7 +420,12 @@ class SILACDetector(RunAttributeDetector):
                     logger.debug("  %d: %d (proportion=%.05f)" % (separation, counts_with_separations[separation], proportion_to_control))
         else:
             logger.warn("SILAC: No counts for any control separation pairs! Cannot estimate prevalence of SILAC separations.")
-            return []
+            # make a dummy result with no significant inferences
+            result = util.RunAttributeResult()
+            for separation in SILAC_MOD_BIN_DISTANCES:
+                result.name_value_pairs['SILAC_%dDa_present' % separation] = 'F'
+                result.name_value_pairs['SILAC_%dDa_statistic' % separation] = '0.0'
+            return result
         control_sd = np.std([counts_with_separations[separation] for separation in SILACDetector.CONTROL_BIN_DISTANCES])
 
         # determine any separations with a significantly elevated number of representatives
