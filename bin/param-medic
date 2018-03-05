@@ -305,7 +305,8 @@ def main():
         else:
             logger.info("No modifications detected requiring search parameter changes.")
         if n_spectra_processed < MIN_SPECTRA_FOR_CONFIDENCE:
-            logger.info("WARNING: only %d spectra were analyzed. Confidence in all assessments is low.")
+            logger.info("WARNING: only %d spectra were analyzed. Confidence in all assessments is low."
+                        % n_spectra_processed)
 
     # print tab-separated output
     print("\t".join(output_name_value_dicts[0].keys()))
