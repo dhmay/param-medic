@@ -54,7 +54,9 @@ DEFAULT_MAX_MZ_FOR_BIN_PRECURSOR = 1800.
 DEFAULT_MIN_MZ_FOR_BIN_FRAGMENT = 150.
 DEFAULT_MAX_MZ_FOR_BIN_FRAGMENT = 1800.
 
-# charge of scan to consider. T
+# charges of scans to consider (each with a different ErrorCalculator).
+DEFAULT_CHARGES_STRING = "0,2,3"
+# default charge if charge not supplied
 DEFAULT_CHARGE = 2
 
 # Number of most-intense fragment peaks to store per scan
@@ -174,7 +176,10 @@ class ErrorCalculator(RunAttributeDetector):
         self.frag_sigma_multiplier = FRAG_SIGMA_MULTIPLIER
 
         # define the number and position of bins
-        self.lowest_precursorbin_startmz = self.min_precursor_mz - (self.min_precursor_mz % ( AVERAGINE_PEAK_SEPARATION / self.charge))
+        ## for determining the low-mz bin to start with, and for converting mz to mass, use self.charge,
+        ## unless that's the dummy 0 charge, in which case fall back to 2
+        self.effective_charge = self.charge if self.charge > 0 else 2
+        self.lowest_precursorbin_startmz = self.min_precursor_mz - (self.min_precursor_mz % ( AVERAGINE_PEAK_SEPARATION / self.effective_charge))
         self.lowest_fragmentbin_startmz = self.min_frag_mz - (self.min_frag_mz % AVERAGINE_PEAK_SEPARATION)
         self.n_precursor_bins = self.calc_binidx_for_mz_precursor(self.max_precursor_mz) + 1
         self.n_fragment_bins = self.calc_binidx_for_mz_fragment(self.max_frag_mz) + 1
@@ -194,7 +199,7 @@ class ErrorCalculator(RunAttributeDetector):
     # these utility methods find the right bin for a given mz
 
     def calc_binidx_for_mz_precursor(self, mz):
-        return int(math.floor((mz - self.lowest_precursorbin_startmz) / (AVERAGINE_PEAK_SEPARATION / self.charge)))
+        return int(math.floor((mz - self.lowest_precursorbin_startmz) / (AVERAGINE_PEAK_SEPARATION / self.effective_charge)))
 
     def calc_binidx_for_mz_fragment(self, mz):
         return int(math.floor((mz - self.lowest_fragmentbin_startmz) / AVERAGINE_PEAK_SEPARATION))
@@ -210,7 +215,7 @@ class ErrorCalculator(RunAttributeDetector):
     # these utility methods calculate the start mz values of a specified bin
 
     def calc_bin_startmz_precursor(self, bin_idx):
-        return self.lowest_precursorbin_startmz + bin_idx * (AVERAGINE_PEAK_SEPARATION / self.charge)
+        return self.lowest_precursorbin_startmz + bin_idx * (AVERAGINE_PEAK_SEPARATION / self.effective_charge)
 
     def calc_bin_startmz_fragment(self, bin_idx):
         return self.lowest_fragmentbin_startmz + bin_idx * AVERAGINE_PEAK_SEPARATION

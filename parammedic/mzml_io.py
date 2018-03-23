@@ -64,7 +64,7 @@ def read_scans(mzml_file, ms_levels=(1, 2), should_renumber_ifmissing=True):
                     logger.debug("Warning! Failed to read scan: %s" % e)
 
 
-def read_scan(scan, default_scan_number=None):
+def read_scan(scan, default_scan_number=None, should_allow_missing_charge=True):
     """
     Read a single scan into our representation
     :param scan:
@@ -97,8 +97,11 @@ def read_scan(scan, default_scan_number=None):
         elif 'possible charge state' in precursor_selected_ion_map:
             charge = precursor_selected_ion_map['possible charge state']
         else:
-            raise ValueError("Could not find charge for scan {}. Fields available: {}".format(
-                scan_number, precursor_selected_ion_map.keys()))
+            if should_allow_missing_charge:
+                charge = 0
+            else:
+                raise ValueError("Could not find charge for scan {}. Fields available: {}".format(
+                    scan_number, precursor_selected_ion_map.keys()))
 
         # damonmay adding for activation type histogram.
         # a scan looks like this:

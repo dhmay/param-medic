@@ -35,7 +35,8 @@ def retrieve_scans(ms2_file, scan_numbers, precursor_from_zline=True, should_cal
             yield scan
 
 
-def read_ms2_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=False):
+def read_ms2_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=False,
+                   should_allow_missing_charge=True):
     """
     Silly cover method, because ms2 files only contain ms2 scans. For consistency with mzml_io
     :param ms2_file:
@@ -44,11 +45,12 @@ def read_ms2_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=
     :return:
     """
     return read_scans(ms2_file, precursor_from_zline=precursor_from_zline,
-                      should_calc_zs_mz_diffs=should_calc_zs_mz_diffs)
+                      should_calc_zs_mz_diffs=should_calc_zs_mz_diffs,
+                      should_allow_missing_charge=should_allow_missing_charge)
 
 
 def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=False,
-               require_rt=False):
+               require_rt=False, should_allow_missing_charge=True):
     """
     yield all scans in the file at ms2_filepath
     :param ms2_file:
@@ -96,7 +98,9 @@ def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=Fals
                     # if we get here, rt is allowed to be missing, so set it to be 0.0
                     retention_time = 0.0
                 # sometimes, a Z line will have a 0 charge. Punt on those
-                if charge is not None and charge > 0:
+                if should_allow_missing_charge or (charge is not None and charge > 0):
+                    if charge is None:
+                        charge = 0
                     yield parammedic.util.MS2Spectrum(scan_number,
                                                       retention_time,
                                                       fragment_mzs,

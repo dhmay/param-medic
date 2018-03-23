@@ -135,6 +135,7 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         self.sum_proportions_in_phosopholoss = 0.0
         # map from offset from phospho loss bin to sum of proportion
         self.sums_proportions_per_controlpeak = {}
+        self.n_spectra_used = 0
         for offset in PHOSPHO_CONTROLPEAK_PHOSPHOPEAK_OFFSETS:
             self.sums_proportions_per_controlpeak[offset] = 0.0
 
@@ -148,6 +149,11 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         :param binned_spectrum: 
         :return: 
         """
+        if spectrum.charge < 1:
+            # can't use spectra of unknown charge
+            return
+        self.n_spectra_used += 1
+        
         # phospho loss peak is DELTA_MASS_PHOSPHO_LOSS lighter than precursor, and in the same charge state
         phospho_loss_mz = spectrum.precursor_mz - (DELTA_MASS_PHOSPHO_LOSS / spectrum.charge)
         phospho_loss_bin = calc_binidx_for_mz_fragment(phospho_loss_mz)
@@ -162,6 +168,12 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         all spectra. Calculate z-score vs. control separations. Make a determination, report the results.
         :return: 
         """
+        if self.n_spectra_used == 0:
+            logger.warn("No spectra usable for phosphorylation detection!")
+            result = util.RunAttributeResult()
+            result.name_value_pairs['phospho_present'] = 'ERROR'
+            result.name_value_pairs['phospho_statistic'] = 'ERROR'
+            return result
 
         control_mean = np.mean(self.sums_proportions_per_controlpeak.values())
         control_sd = np.std(self.sums_proportions_per_controlpeak.values())
@@ -363,6 +375,9 @@ class SILACDetector(RunAttributeDetector):
         Just calculate the bin that holds this precursor mass and record the bin index
         :return: 
         """
+        if spectrum.charge < 1:
+            # can't use spectra of unknown charge
+            return
         self.scan_numbers.append(spectrum.scan_number)
         precursor_mass = calc_mplush_from_mz_charge(spectrum.precursor_mz, spectrum.charge)
         binidx = calc_binidx_for_mass_precursor(precursor_mass)
@@ -423,8 +438,8 @@ class SILACDetector(RunAttributeDetector):
             # make a dummy result with no significant inferences
             result = util.RunAttributeResult()
             for separation in SILAC_MOD_BIN_DISTANCES:
-                result.name_value_pairs['SILAC_%dDa_present' % separation] = 'F'
-                result.name_value_pairs['SILAC_%dDa_statistic' % separation] = '0.0'
+                result.name_value_pairs['SILAC_%dDa_present' % separation] = 'ERROR'
+                result.name_value_pairs['SILAC_%dDa_statistic' % separation] = 'ERROR'
             return result
         control_sd = np.std([counts_with_separations[separation] for separation in SILACDetector.CONTROL_BIN_DISTANCES])
 
