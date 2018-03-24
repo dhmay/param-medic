@@ -56,7 +56,7 @@ DEFAULT_MIN_MZ_FOR_BIN_FRAGMENT = 150.
 DEFAULT_MAX_MZ_FOR_BIN_FRAGMENT = 1800.
 
 # charges of scans to consider (each with a different ErrorCalculator).
-DEFAULT_CHARGES_STRING = "0,2,3"
+DEFAULT_CHARGES_STRING = "0,2,3,4"
 # default charge if charge not supplied
 DEFAULT_CHARGE = 2
 
@@ -103,6 +103,14 @@ MIN_SIGMA_TH = 0.00001
 
 
 class MultiChargeErrorCalculator(RunAttributeDetector):
+    """
+    An aggregator for multiple PerChargeErrorCalculators. Manages one calculator per charge,
+    plus one for spectra of unknown charge that is only used if the per-charge calculators
+    all come up empty.
+
+    The per-charge error calculators assemble the pairs of precursors and fragments, and
+    this class combines the information to produce the final estimates.
+    """
     def __init__(self, charges,
                  min_precursor_mz=DEFAULT_MIN_MZ_FOR_BIN_PRECURSOR,
                  max_precursor_mz=DEFAULT_MAX_MZ_FOR_BIN_PRECURSOR,
@@ -361,7 +369,8 @@ class MultiChargeErrorCalculator(RunAttributeDetector):
 
 class PerChargeErrorCalculator(object):
     """
-    Class that accumulates pairs of precursors and fragments and uses them to estimate mass error.
+    Class that accumulates pairs of precursors and fragments and uses them to estimate mass error,
+    using only spectra from a single charge (or of unknown charge).
     """
     def __init__(self,
                  min_precursor_mz=DEFAULT_MIN_MZ_FOR_BIN_PRECURSOR,
