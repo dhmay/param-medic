@@ -169,29 +169,25 @@ def main():
     output_name_value_dicts = []
     for infile_group in infile_groups:
         # map from charge to the error calculator for that charge
-        charge_errorcalculator_map = None
-        
         # list of all run attribute detectors
         run_attribute_detectors = []
         # list of just the modification detectors (if any)
         modification_detectors = []
+        error_calculator = None
         if not args.noerrorcalc:
-            charge_errorcalculator_map = {}
-            for charge in charges_for_errorcalc:
-                error_calculator = errorcalc.ErrorCalculator(min_precursor_mz=args.min_precursor_mz,
-                                                         max_precursor_mz=args.max_precursor_mz,
-                                                         min_frag_mz=args.min_frag_mz,
-                                                         max_frag_mz=args.max_frag_mz,
-                                                         charge=charge,
-                                                         min_scan_frag_peaks=args.min_scan_frag_peaks,
-                                                         topn_frag_peaks=args.top_n_frag_peaks,
-                                                         min_common_frag_peaks=args.min_common_frag_peaks,
-                                                         pair_topn_frag_peaks=args.pair_top_n_frag_peaks,
-                                                         max_scan_separation=args.max_scan_separation,
-                                                         max_precursor_deltappm=args.max_precursor_delta_ppm,
-                                                         min_peakpairs=args.min_peak_pairs)
-                run_attribute_detectors.append(error_calculator)
-                charge_errorcalculator_map[charge] = error_calculator
+            error_calculator = errorcalc.MultiChargeErrorCalculator(min_precursor_mz=args.min_precursor_mz,
+                                                     max_precursor_mz=args.max_precursor_mz,
+                                                     min_frag_mz=args.min_frag_mz,
+                                                     max_frag_mz=args.max_frag_mz,
+                                                     charges=charges_for_errorcalc,
+                                                     min_scan_frag_peaks=args.min_scan_frag_peaks,
+                                                     topn_frag_peaks=args.top_n_frag_peaks,
+                                                     min_common_frag_peaks=args.min_common_frag_peaks,
+                                                     pair_topn_frag_peaks=args.pair_top_n_frag_peaks,
+                                                     max_scan_separation=args.max_scan_separation,
+                                                     max_precursor_deltappm=args.max_precursor_delta_ppm,
+                                                     min_peakpairs=args.min_peak_pairs)
+            run_attribute_detectors.append(error_calculator)
 
         # unless mod inference is suppressed, add each of the modification detectors
         if not args.nomodinference:
@@ -251,30 +247,12 @@ def main():
 
         # accumulate all the search parameter recommendations
         search_parameter_recommendations = []
-        if charge_errorcalculator_map:
-            # pick the best error calculator to use based on the number of spectra it processed
-            error_calculator = None
-            n_spectra_errorcalc_processed = -1
-            for charge in charge_errorcalculator_map:
-                if charge_errorcalculator_map[charge].n_passing_spectra > n_spectra_errorcalc_processed:
-                    n_spectra_errorcalc_processed = charge_errorcalculator_map[charge].n_passing_spectra
-                    error_calculator = charge_errorcalculator_map[charge]
-                
-            logger.info("Using spectra of charge {} {}for error calculation".format(error_calculator.charge,
-                                                                                    "(unknown) " if error_calculator.charge == 0 else ""))
-            if error_calculator.charge == 0:
-                logger.warn("Using unknown-charge spectra! Cannot estimate precursor error.")
-            
+        if error_calculator:
             errorcalc_messages, precursor_sigma_ppm, frag_sigma_ppm, precursor_prediction_ppm, fragment_prediction_th = error_calculator.summarize()
             search_parameter_recommendations.extend(errorcalc_messages)
             # assemble error-calculation output. If a prediction failed the value will be None, so reformat
-            if error_calculator.charge == 0:
-                #Can't estimate precursor error if charge is 0, since conversion from mz to mass is suspect.
-                output_name_value_dict['precursor_prediction_ppm'] = 'ERROR'
-                output_name_value_dict['precursor_sigma_ppm'] = 'ERROR'
-            else:
-                output_name_value_dict['precursor_prediction_ppm'] = str(precursor_prediction_ppm) if precursor_prediction_ppm is not None else 'ERROR'
-                output_name_value_dict['precursor_sigma_ppm'] = str(precursor_sigma_ppm) if precursor_sigma_ppm is not None else 'ERROR'
+            output_name_value_dict['precursor_prediction_ppm'] = str(precursor_prediction_ppm) if precursor_prediction_ppm is not None else 'ERROR'
+            output_name_value_dict['precursor_sigma_ppm'] = str(precursor_sigma_ppm) if precursor_sigma_ppm is not None else 'ERROR'
             output_name_value_dict['fragment_prediction_th'] = str(fragment_prediction_th) if fragment_prediction_th is not None else 'ERROR'
             output_name_value_dict['fragment_sigma_ppm'] = str(frag_sigma_ppm) if frag_sigma_ppm is not None else 'ERROR'
 

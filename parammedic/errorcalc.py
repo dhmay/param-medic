@@ -33,6 +33,7 @@ import logging
 import math
 import random
 from util import RunAttributeDetector, MIN_SCAN_PEAKS
+import itertools
 
 import numpy as np
 
@@ -101,7 +102,264 @@ MIN_SIGMA_PPM = 0.01
 MIN_SIGMA_TH = 0.00001
 
 
-class ErrorCalculator(RunAttributeDetector):
+class MultiChargeErrorCalculator(RunAttributeDetector):
+    def __init__(self, charges,
+                 min_precursor_mz=DEFAULT_MIN_MZ_FOR_BIN_PRECURSOR,
+                 max_precursor_mz=DEFAULT_MAX_MZ_FOR_BIN_PRECURSOR,
+                 min_frag_mz=DEFAULT_MIN_MZ_FOR_BIN_FRAGMENT,
+                 max_frag_mz=DEFAULT_MAX_MZ_FOR_BIN_FRAGMENT,
+                 min_scan_frag_peaks=MIN_SCAN_PEAKS,
+                 topn_frag_peaks=DEFAULT_TOPN_FRAGPEAKS,
+                 min_common_frag_peaks=DEFAULT_MIN_FRAGPEAKS_INCOMMON,
+                 pair_topn_frag_peaks=DEFAULT_TOPN_FRAGPEAKS_FOR_ERROR_EST,
+                 max_scan_separation=DEFAULT_MAX_SCANS_BETWEEN_COMPARESCANS,
+                 max_precursor_deltappm=DEFAULT_MAX_PRECURSORDIST_PPM,
+                 min_peakpairs=DEFAULT_MIN_PEAKPAIRS_FOR_DISTRIBUTION_FIT):
+        self.charges = charges
+        self.charge_perchargecalculator_map = {}
+        self.n_total_spectra = 0
+        self.min_peakpairs = min_peakpairs
+
+        # multipliers to transform standord error values into algorithm parameters
+        self.precursor_sigma_multiplier = PRECURSOR_SIGMA_MULTIPLIER
+        self.frag_sigma_multiplier = FRAG_SIGMA_MULTIPLIER
+
+        for charge in self.charges:
+            self.charge_perchargecalculator_map[charge] = PerChargeErrorCalculator(
+                min_precursor_mz=min_precursor_mz,
+                max_precursor_mz=max_precursor_mz,
+                min_frag_mz=min_frag_mz,
+                max_frag_mz=max_frag_mz,
+                min_scan_frag_peaks=min_scan_frag_peaks,
+                topn_frag_peaks=topn_frag_peaks,
+                min_common_frag_peaks=min_common_frag_peaks,
+                pair_topn_frag_peaks=pair_topn_frag_peaks,
+                max_scan_separation=max_scan_separation,
+                max_precursor_deltappm=max_precursor_deltappm,
+                min_peakpairs=min_peakpairs,
+                charge=charge)
+
+    def process_spectrum(self, spectrum, binned_spectrum):
+        for per_charge_calculator in self.charge_perchargecalculator_map.values():
+            per_charge_calculator.process_spectrum(spectrum, binned_spectrum)
+            self.n_total_spectra += 1
+
+    def next_file(self):
+        """
+        Register that a new file is being processed.
+        clear the bins so we don't end up using pairs across files
+        :return:
+        """
+        for per_charge_calculator in self.charge_perchargecalculator_map.values():
+            per_charge_calculator.clear_all_bins()
+
+    def calc_masserror_dist(self):
+        """
+        This is to be run after all spectra have been processed. Fit the mixed model to the mixed
+        distributions of m/z differences
+        :return:
+        """
+        logger.debug("Processed %d total spectra" % self.n_total_spectra)
+        for charge in self.charge_perchargecalculator_map:
+            percharge_calculator = self.charge_perchargecalculator_map[charge]
+            logger.debug("  charge {}:".format(charge))
+            logger.debug("Processed %d qualifying spectra" % percharge_calculator.n_passing_spectra)
+            logger.debug("Precursor pairs: %d" % len(percharge_calculator.paired_precursor_mzs))
+            logger.debug("Fragment pairs: %d" % len(percharge_calculator.paired_fragment_peaks))
+
+            logger.debug("Total spectra in same bin as another: %d" % percharge_calculator.n_spectra_samebin_other_spectrum)
+            logger.debug("Total spectra in same bin as another and within m/z tol: %d" %
+                         percharge_calculator.n_spectra_withinppm_other_spectrum)
+            logger.debug("Total spectra in same bin as another and within m/z tol and within scan range: %d" %
+                         percharge_calculator.n_spectra_withinppm_withinscans_other_spectrum)
+            # check the proportion of mass bins, in the whole file, that have multiple fragments.
+            # If that's high, we might be looking at profile-mode data.
+            if percharge_calculator.n_bins_one_frag + percharge_calculator.n_bins_multiple_frags == 0:
+                proportion_bins_multiple_frags = 0
+                logger.debug("No values in any bin!")
+            else:
+                proportion_bins_multiple_frags = float(percharge_calculator.n_bins_multiple_frags) / \
+                                                 (percharge_calculator.n_bins_one_frag + percharge_calculator.n_bins_multiple_frags)
+                logger.debug("Proportion of bins with multiple fragments: %.02f" % proportion_bins_multiple_frags)
+                if proportion_bins_multiple_frags > PROPORTION_MASSBINS_MULTIPEAK_INDICATES_PROFILEMODE:
+                    logger.info("Is this profile-mode data? Proportion of mass bins with multiple peaks is quite high (%.02f)" %
+                                proportion_bins_multiple_frags)
+                    logger.info("Param-Medic will not perform well on profile-mode data.")
+
+
+        # determine whether any of the calculators for a nonzero charge has any spectra
+        has_nonzerocharge_pairs = False
+        for charge in self.charge_perchargecalculator_map:
+            if charge > 0 and len(self.charge_perchargecalculator_map[charge].paired_precursor_mzs) > 0:
+                has_nonzerocharge_pairs = True
+                break
+        if has_nonzerocharge_pairs:
+            logger.debug("Found paired spectra from known charges, so using those.")
+            paired_precursor_mzs = list(itertools.chain(*[x.paired_precursor_mzs
+                                                       for x in self.charge_perchargecalculator_map.values()
+                                                       if x.charge > 0]))
+            paired_fragment_peaks = list(itertools.chain(*[x.paired_fragment_peaks
+                                                     for x in self.charge_perchargecalculator_map.values()
+                                                     if x.charge > 0]))
+        else:
+            print("Did not find spectra from known charges, so looking for unknown-charge spectra.")
+            zerocharge_calculator = self.charge_perchargecalculator_map[0]
+            paired_precursor_mzs = zerocharge_calculator.paired_precursor_mzs
+            paired_fragment_peaks = zerocharge_calculator.paired_fragment_peaks
+
+        n_zero_precursor_deltas = 0
+        if len(paired_precursor_mzs) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
+            logger.debug("Using %d of %d peak pairs for precursor..." %
+                         (MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(paired_precursor_mzs)))
+            paired_precursor_mzs = random.sample(paired_precursor_mzs, MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT)
+        precursor_distances_ppm = []
+        for mz1, mz2 in paired_precursor_mzs:
+            diff_th = mz1 - mz2
+            if diff_th == 0.0:
+                n_zero_precursor_deltas += 1
+            precursor_distances_ppm.append(diff_th * 1000000 / mz1)
+
+        # we need to report precursor if fragment fails, and vice versa.
+        # these variables keep track of what failed and why
+        failed_precursor = False
+        precursor_message = "OK"
+
+        # check for conditions that would cause us to bomb out
+        if len(precursor_distances_ppm) < self.min_peakpairs:
+            failed_precursor = True
+            precursor_message = ("Need >= %d peak pairs to fit mixed distribution. Got only %d.\nDetails:\n" %
+                                 (self.min_peakpairs, len(precursor_distances_ppm)))
+            for charge in self.charge_perchargecalculator_map:
+                percharge_calculator = self.charge_perchargecalculator_map[charge]
+                precursor_message = (precursor_message + "  Charge %d\n" \
+                                 "Spectra in same averagine bin as another: %d\n" \
+                                 "    ... and also within m/z tolerance: %d\n" \
+                                 "    ... and also within scan range: %d\n" \
+                                 "    ... and also with sufficient in-common fragments: %d\n" %
+                                 (charge,
+                                  percharge_calculator.n_spectra_samebin_other_spectrum,
+                                  percharge_calculator.n_spectra_withinppm_other_spectrum,
+                                  percharge_calculator.n_spectra_withinppm_withinscans_other_spectrum,
+                                  len(precursor_distances_ppm)))
+
+        if not failed_precursor:
+            proportion_precursor_mzs_zero = float(n_zero_precursor_deltas) / len(precursor_distances_ppm)
+            logger.debug("proportion zero: %f" % proportion_precursor_mzs_zero)
+            if proportion_precursor_mzs_zero > MAX_PROPORTION_PRECURSORDELTAS_0:
+                failed_precursor = True
+                precursor_message = "Too high a proportion of precursor mass differences (%f) are exactly 0. " \
+                                 "Some processing has been done on this run that param-medic can't handle. " \
+                                 "You should investigate what that processing might be." % proportion_precursor_mzs_zero
+
+        precursor_mu_ppm_2measures, precursor_sigma_ppm_2measures = None, None
+        if not failed_precursor:
+            try:
+                precursor_mu_ppm_2measures, precursor_sigma_ppm_2measures = estimate_mu_sigma(precursor_distances_ppm, MIN_SIGMA_PPM)
+            except Exception as e:
+                failed_precursor = True
+                precursor_message = "Unknown error estimating mu, sigma: %s" % str(e)
+
+        failed_fragment = False
+        fragment_message = "OK"
+
+        frag_distances_ppm = []
+        if len(paired_fragment_peaks) < self.min_peakpairs:
+            failed_fragment = True
+            fragment_message = "Need >= %d peak pairs to fit mixed distribution. Got only %d\nDetails:\n" % (self.min_peakpairs,
+                                                                                                             len(self.paired_fragment_peaks))
+            for charge in self.charge_perchargecalculator_map:
+                percharge_calculator = self.charge_perchargecalculator_map[charge]
+                print("  Charge %d: \n" \
+                                "   Spectra in same averagine bin as another: %d\n" \
+                                "    ... and also within m/z tolerance: %d\n" \
+                                "    ... and also within scan range: %d\n" 
+                                "    ... and also with sufficient in-common fragments: %d\n"%
+                                 percharge_calculator.n_spectra_samebin_other_spectrum,
+                                 percharge_calculator.n_spectra_withinppm_other_spectrum,
+                                 percharge_calculator.n_spectra_withinppm_withinscans_other_spectrum,
+                                 len(percharge_calculator.paired_fragment_peaks))
+        frag_mu_ppm_2measures, frag_sigma_ppm_2measures = None, None
+        if not failed_fragment:
+            if len(paired_fragment_peaks) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
+                logger.debug("Using %d of %d peak pairs for fragment..." %
+                             (MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(paired_fragment_peaks)))
+                paired_fragment_peaks = random.sample(paired_fragment_peaks, MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT)
+            for fragpeak1, fragpeak2 in paired_fragment_peaks:
+                diff_th = fragpeak1[0] - fragpeak2[0]
+                frag_distances_ppm.append(diff_th * 1000000 / fragpeak1[0])
+            try:
+                # estimate the parameters of the component distributions for each of the mixed distributions.
+                frag_mu_ppm_2measures, frag_sigma_ppm_2measures = estimate_mu_sigma(frag_distances_ppm, MIN_SIGMA_PPM)
+            except Exception as e:
+                failed_fragment = True
+                fragment_message = "Unknown error estimating mu, sigma: %s" % str(e)
+
+        if failed_precursor:
+            logger.debug("Failed precursor! %s" % precursor_message)
+        else:
+            logger.debug('precursor_mu_ppm_2measures: %f' % precursor_mu_ppm_2measures)
+            logger.debug('precursor_sigma_ppm_2measures: %f' % precursor_sigma_ppm_2measures)
+
+        if failed_fragment:
+            logger.debug("Failed fragment! %s" % fragment_message)
+        else:
+            logger.debug('frag_mu_ppm_2measures: %f' % frag_mu_ppm_2measures)
+            logger.debug('frag_sigma_ppm_2measures: %f' % frag_sigma_ppm_2measures)
+
+        # what we have now measured, in the fit Gaussians, is the distribution of the difference
+        # of two values drawn from the distribution of error values.
+        # Assuming the error values are normally distributed with mean 0 and variance s^2, the
+        # differences are normally distributed with mean 0 and variance 2*s^2:
+        # http://mathworld.wolfram.com/NormalDifferenceDistribution.html
+        # i.e., differences are normally distributed with mean=0 and sd=sqrt(2)*s
+        # hence, if differences have sd=diff_sigma, then errors have sd diff_sigma/sqrt(2)
+        #
+        # incidentally, this transformation doesn't matter one bit, practically, since we're
+        # inferring a multiplier for this value empirically. But it lets us report something
+        # with an easily-interpretable meaning as an intermediate value
+        precursor_sigma_ppm = None
+        precursor_prediction_ppm = None
+        if not failed_precursor:
+            precursor_sigma_ppm = precursor_sigma_ppm_2measures/math.sqrt(2)
+            # generate prediction by multiplying by empirically-derived value
+            precursor_prediction_ppm = self.precursor_sigma_multiplier * precursor_sigma_ppm
+        frag_sigma_ppm = None
+        fragment_prediction_th = None
+        if not failed_fragment:
+            frag_sigma_ppm = frag_sigma_ppm_2measures/math.sqrt(2)
+            # generate prediction by multiplying by empirically-derived value
+            fragment_prediction_th = self.frag_sigma_multiplier * frag_sigma_ppm
+
+        return (failed_precursor, precursor_message, failed_fragment, fragment_message,
+                precursor_sigma_ppm, frag_sigma_ppm,
+                precursor_prediction_ppm, fragment_prediction_th)
+
+    def summarize(self):
+        (failed_precursor, precursor_message, failed_fragment, fragment_message, precursor_sigma_ppm, frag_sigma_ppm,
+         precursor_prediction_ppm, fragment_prediction_th) = \
+            self.calc_masserror_dist()
+        logger.info("Precursor and fragment error summary:")
+        if failed_precursor:
+            logger.info("Precursor error calculation failed:")
+            logger.info(precursor_message)
+        else:
+            logger.info('precursor standard deviation: %f ppm' % precursor_sigma_ppm)
+        if failed_fragment:
+            logger.info("Fragment error calculation failed:")
+            logger.info(fragment_message)
+        else:
+            logger.info('fragment standard deviation: %f ppm' % frag_sigma_ppm)
+        logger.debug('')
+
+        search_param_messages = []
+        if not failed_precursor:
+            search_param_messages.append("Precursor error: %.2f ppm" % precursor_prediction_ppm)
+        if not failed_fragment:
+            search_param_messages.append("Fragment bin size: %.4f Th" % fragment_prediction_th)
+        return search_param_messages, precursor_sigma_ppm, frag_sigma_ppm, precursor_prediction_ppm, fragment_prediction_th
+
+
+class PerChargeErrorCalculator(object):
     """
     Class that accumulates pairs of precursors and fragments and uses them to estimate mass error.
     """
@@ -177,9 +435,10 @@ class ErrorCalculator(RunAttributeDetector):
 
         # define the number and position of bins
         ## for determining the low-mz bin to start with, and for converting mz to mass, use self.charge,
-        ## unless that's the dummy 0 charge, in which case fall back to 2
-        self.effective_charge = self.charge if self.charge > 0 else 2
-        self.lowest_precursorbin_startmz = self.min_precursor_mz - (self.min_precursor_mz % ( AVERAGINE_PEAK_SEPARATION / self.effective_charge))
+        ## unless that's the dummy 0 charge, in which case fall back to 4.
+        ## Using 4 because that's the tightest bin size of the commonly observed charges.
+        self.charge_for_bin_size = self.charge if self.charge > 0 else 4
+        self.lowest_precursorbin_startmz = self.min_precursor_mz - (self.min_precursor_mz % (AVERAGINE_PEAK_SEPARATION / self.charge_for_bin_size))
         self.lowest_fragmentbin_startmz = self.min_frag_mz - (self.min_frag_mz % AVERAGINE_PEAK_SEPARATION)
         self.n_precursor_bins = self.calc_binidx_for_mz_precursor(self.max_precursor_mz) + 1
         self.n_fragment_bins = self.calc_binidx_for_mz_fragment(self.max_frag_mz) + 1
@@ -199,7 +458,7 @@ class ErrorCalculator(RunAttributeDetector):
     # these utility methods find the right bin for a given mz
 
     def calc_binidx_for_mz_precursor(self, mz):
-        return int(math.floor((mz - self.lowest_precursorbin_startmz) / (AVERAGINE_PEAK_SEPARATION / self.effective_charge)))
+        return int(math.floor((mz - self.lowest_precursorbin_startmz) / (AVERAGINE_PEAK_SEPARATION / self.charge_for_bin_size)))
 
     def calc_binidx_for_mz_fragment(self, mz):
         return int(math.floor((mz - self.lowest_fragmentbin_startmz) / AVERAGINE_PEAK_SEPARATION))
@@ -215,7 +474,7 @@ class ErrorCalculator(RunAttributeDetector):
     # these utility methods calculate the start mz values of a specified bin
 
     def calc_bin_startmz_precursor(self, bin_idx):
-        return self.lowest_precursorbin_startmz + bin_idx * (AVERAGINE_PEAK_SEPARATION / self.effective_charge)
+        return self.lowest_precursorbin_startmz + bin_idx * (AVERAGINE_PEAK_SEPARATION / self.charge_for_bin_size)
 
     def calc_bin_startmz_fragment(self, bin_idx):
         return self.lowest_fragmentbin_startmz + bin_idx * AVERAGINE_PEAK_SEPARATION
@@ -320,186 +579,7 @@ class ErrorCalculator(RunAttributeDetector):
         self.n_bins_one_frag += len(bin_fragment_map)
         return bin_fragment_map
 
-    def calc_masserror_dist(self):
-        """
-        This is to be run after all spectra have been processed. Fit the mixed model to the mixed
-        distributions of m/z differences
-        :return:
-        """
-        logger.debug("Processed %d total spectra" % self.n_total_spectra)
-        logger.debug("Processed %d qualifying spectra" % self.n_passing_spectra)
-        logger.debug("Precursor pairs: %d" % len(self.paired_precursor_mzs))
-        logger.debug("Fragment pairs: %d" % len(self.paired_fragment_peaks))
 
-        logger.debug("Total spectra in same bin as another: %d" % self.n_spectra_samebin_other_spectrum)
-        logger.debug("Total spectra in same bin as another and within m/z tol: %d" %
-                     self.n_spectra_withinppm_other_spectrum)
-        logger.debug("Total spectra in same bin as another and within m/z tol and within scan range: %d" %
-                     self.n_spectra_withinppm_withinscans_other_spectrum)
-        # check the proportion of mass bins, in the whole file, that have multiple fragments.
-        # If that's high, we might be looking at profile-mode data.
-        if self.n_bins_one_frag + self.n_bins_multiple_frags == 0:
-            proportion_bins_multiple_frags = 0
-            logger.debug("No values in any bin!")
-        else:
-            proportion_bins_multiple_frags = float(self.n_bins_multiple_frags) / \
-                                             (self.n_bins_one_frag + self.n_bins_multiple_frags)
-            logger.debug("Proportion of bins with multiple fragments: %.02f" % (proportion_bins_multiple_frags))
-
-        precursor_distances_ppm = []
-        n_zero_precursor_deltas = 0
-        if len(self.paired_precursor_mzs) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
-            logger.debug("Using %d of %d peak pairs for precursor..." %
-                         (MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(self.paired_precursor_mzs)))
-            self.paired_precursor_mzs = random.sample(self.paired_precursor_mzs, MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT)
-        for mz1, mz2 in self.paired_precursor_mzs:
-            diff_th = mz1 - mz2
-            if diff_th == 0.0:
-                n_zero_precursor_deltas += 1
-            precursor_distances_ppm.append(diff_th * 1000000 / mz1)
-
-        # we need to report precursor if fragment fails, and vice versa.
-        # these variables keep track of what failed and why
-        failed_precursor = False
-        precursor_message = "OK"
-
-        if proportion_bins_multiple_frags > PROPORTION_MASSBINS_MULTIPEAK_INDICATES_PROFILEMODE:
-            logger.info("Is this profile-mode data? Proportion of mass bins with multiple peaks is quite high (%.02f)" %
-                        proportion_bins_multiple_frags)
-            logger.info("Param-Medic will not perform well on profile-mode data.")
-
-        # check for conditions that would cause us to bomb out
-        if len(precursor_distances_ppm) < self.min_peakpairs:
-            failed_precursor = True
-            precursor_message = ("Need >= %d peak pairs to fit mixed distribution. Got only %d.\nDetails:\n" \
-                                 "Spectra in same averagine bin as another: %d\n" \
-                                 "    ... and also within m/z tolerance: %d\n" \
-                                 "    ... and also within scan range: %d\n" \
-                                 "    ... and also with sufficient in-common fragments: %d\n" %
-                                 (self.min_peakpairs, len(precursor_distances_ppm),
-                                  self.n_spectra_samebin_other_spectrum,
-                                  self.n_spectra_withinppm_other_spectrum,
-                                  self.n_spectra_withinppm_withinscans_other_spectrum,
-                                  len(precursor_distances_ppm)))
-            if proportion_bins_multiple_frags > PROPORTION_MASSBINS_MULTIPEAK_INDICATES_PROFILEMODE:
-                precursor_message += "Is this profile-mode data? Proportion of mass bins with multiple peaks is quite high (%.02f)\n" % proportion_bins_multiple_frags
-                precursor_message += "Param-Medic will not perform well on profile-mode data.\n"
-
-        if not failed_precursor:
-            proportion_precursor_mzs_zero = float(n_zero_precursor_deltas) / len(self.paired_precursor_mzs)
-            logger.debug("proportion zero: %f" % proportion_precursor_mzs_zero)
-            if proportion_precursor_mzs_zero > MAX_PROPORTION_PRECURSORDELTAS_0:
-                failed_precursor = True
-                precursor_message = "Too high a proportion of precursor mass differences (%f) are exactly 0. " \
-                                 "Some processing has been done on this run that param-medic can't handle. " \
-                                 "You should investigate what that processing might be." % proportion_precursor_mzs_zero
-
-        precursor_mu_ppm_2measures, precursor_sigma_ppm_2measures = None, None
-        if not failed_precursor:
-            try:
-                precursor_mu_ppm_2measures, precursor_sigma_ppm_2measures = estimate_mu_sigma(precursor_distances_ppm, MIN_SIGMA_PPM)
-            except Exception as e:
-                failed_precursor = True
-                precursor_message = "Unknown error estimating mu, sigma: %s" % str(e)
-
-        failed_fragment = False
-        fragment_message = "OK"
-
-        frag_distances_ppm = []
-        if len(self.paired_fragment_peaks) < self.min_peakpairs:
-            failed_fragment = True
-            fragment_message = ("Need >= %d peak pairs to fit mixed distribution. Got only %d\nDetails:\n" \
-                                "Spectra in same averagine bin as another: %d\n" \
-                                "    ... and also within m/z tolerance: %d\n" \
-                                "    ... and also within scan range: %d\n" 
-                                "    ... and also with sufficient in-common fragments: %d\n"%
-                                (self.min_peakpairs, len(self.paired_fragment_peaks),
-                                 self.n_spectra_samebin_other_spectrum,
-                                 self.n_spectra_withinppm_other_spectrum,
-                                 self.n_spectra_withinppm_withinscans_other_spectrum,
-                                 len(self.paired_fragment_peaks)))
-            if proportion_bins_multiple_frags > PROPORTION_MASSBINS_MULTIPEAK_INDICATES_PROFILEMODE:
-                fragment_message += "Is this profile-mode data? Proportion of mass bins with multiple peaks is quite high (%.02f)\n" % proportion_bins_multiple_frags
-                fragment_message += "Param-Medic will not perform well on profile-mode data.\n"
-        frag_mu_ppm_2measures, frag_sigma_ppm_2measures = None, None
-        if not failed_fragment:
-            if len(self.paired_fragment_peaks) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
-                logger.debug("Using %d of %d peak pairs for fragment..." %
-                             (MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(self.paired_fragment_peaks)))
-                self.paired_fragment_peaks = random.sample(self.paired_fragment_peaks, MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT)
-            for fragpeak1, fragpeak2 in self.paired_fragment_peaks:
-                diff_th = fragpeak1[0] - fragpeak2[0]
-                frag_distances_ppm.append(diff_th * 1000000 / fragpeak1[0])
-            try:
-                # estimate the parameters of the component distributions for each of the mixed distributions.
-                frag_mu_ppm_2measures, frag_sigma_ppm_2measures = estimate_mu_sigma(frag_distances_ppm, MIN_SIGMA_PPM)
-            except Exception as e:
-                failed_fragment = True
-                fragment_message = "Unknown error estimating mu, sigma: %s" % str(e)
-
-        if failed_precursor:
-            logger.debug("Failed precursor! %s" % precursor_message)
-        else:
-            logger.debug('precursor_mu_ppm_2measures: %f' % precursor_mu_ppm_2measures)
-            logger.debug('precursor_sigma_ppm_2measures: %f' % precursor_sigma_ppm_2measures)
-
-        if failed_fragment:
-            logger.debug("Failed fragment! %s" % fragment_message)
-        else:
-            logger.debug('frag_mu_ppm_2measures: %f' % frag_mu_ppm_2measures)
-            logger.debug('frag_sigma_ppm_2measures: %f' % frag_sigma_ppm_2measures)
-
-        # what we have now measured, in the fit Gaussians, is the distribution of the difference
-        # of two values drawn from the distribution of error values.
-        # Assuming the error values are normally distributed with mean 0 and variance s^2, the
-        # differences are normally distributed with mean 0 and variance 2*s^2:
-        # http://mathworld.wolfram.com/NormalDifferenceDistribution.html
-        # i.e., differences are normally distributed with mean=0 and sd=sqrt(2)*s
-        # hence, if differences have sd=diff_sigma, then errors have sd diff_sigma/sqrt(2)
-        #
-        # incidentally, this transformation doesn't matter one bit, practically, since we're
-        # inferring a multiplier for this value empirically. But it lets us report something
-        # with an easily-interpretable meaning as an intermediate value
-        precursor_sigma_ppm = None
-        precursor_prediction_ppm = None
-        if not failed_precursor:
-            precursor_sigma_ppm = precursor_sigma_ppm_2measures/math.sqrt(2)
-            # generate prediction by multiplying by empirically-derived value
-            precursor_prediction_ppm = self.precursor_sigma_multiplier * precursor_sigma_ppm
-        frag_sigma_ppm = None
-        fragment_prediction_th = None
-        if not failed_fragment:
-            frag_sigma_ppm = frag_sigma_ppm_2measures/math.sqrt(2)
-            # generate prediction by multiplying by empirically-derived value
-            fragment_prediction_th = self.frag_sigma_multiplier * frag_sigma_ppm
-
-        return (failed_precursor, precursor_message, failed_fragment, fragment_message,
-                precursor_sigma_ppm, frag_sigma_ppm,
-                precursor_prediction_ppm, fragment_prediction_th)
-
-    def summarize(self):
-        (failed_precursor, precursor_message, failed_fragment, fragment_message, precursor_sigma_ppm, frag_sigma_ppm,
-         precursor_prediction_ppm, fragment_prediction_th) = \
-            self.calc_masserror_dist()
-        logger.info("Precursor and fragment error summary:")
-        if failed_precursor:
-            logger.info("Precursor error calculation failed:")
-            logger.info(precursor_message)
-        else:
-            logger.info('precursor standard deviation: %f ppm' % precursor_sigma_ppm)
-        if failed_fragment:
-            logger.info("Fragment error calculation failed:")
-            logger.info(fragment_message)
-        else:
-            logger.info('fragment standard deviation: %f ppm' % frag_sigma_ppm)
-        logger.debug('')
-
-        search_param_messages = []
-        if not failed_precursor:
-            search_param_messages.append("Precursor error: %.2f ppm" % precursor_prediction_ppm)
-        if not failed_fragment:
-            search_param_messages.append("Fragment bin size: %.4f Th" % fragment_prediction_th)
-        return search_param_messages, precursor_sigma_ppm, frag_sigma_ppm, precursor_prediction_ppm, fragment_prediction_th
 
     def next_file(self):
         """
