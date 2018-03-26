@@ -208,7 +208,7 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
 # TMT610_WINDOW_WIDTH area around the TMT10 peak and associated TMT6 peak 
 # in order to declare TMT10 present
 TMT610_MINPEAKS_TMT_PRESENT_FOR_DECISION = 2
-TMT610_MIN_TMT10_PROPORTION_FOR_DECISION = 0.1
+TMT610_MIN_TMT10_PROPORTION_FOR_DECISION = 0.2
 
 # define the nominal and precise TMT6 and TMT10 reporter ion masses
 # http://www.unimod.org/modifications_view.php?editid1=737
@@ -238,13 +238,13 @@ TMT610_NOMINALMASS_TMT10MASS_MAP = {
 # this is roughly the difference between the TMT6 and TMT10 masses
 TMT10_MASSDIFF_FROM6 = .00632
 # amount of padding on each size of the 6 and 10 peaks
-TMT10_PADDING_EACHSIDE = TMT10_MASSDIFF_FROM6
+TMT10_PADDING_EACHSIDE = TMT10_MASSDIFF_FROM6 * 5
 # window width
 TMT610_WINDOW_WIDTH = TMT10_PADDING_EACHSIDE * 2 + TMT10_MASSDIFF_FROM6
 
 # small window around each individual expected peak, for use in deciding
 # whether each TMT10 peak is present
-TMT610_PEAK_WIDTH_FOR_DETECT = 0.0001
+TMT610_PEAK_WIDTH_FOR_DETECT = 0.003
 
 # map from each nominal mass to the minimum mass in the window to consider
 TMT610_NOMINALMASS_MINBINMASS_MAP = {}
@@ -252,7 +252,7 @@ TMT610_NOMINALMASS_MINBINMASS_MAP = {}
 # define the minimum TMT mass (6 or 10) for each nominal mass
 for nominal_mass in TMT610_NOMINALMASS_TMT6MASS_MAP:
     TMT610_NOMINALMASS_MINBINMASS_MAP[nominal_mass] = min(TMT610_NOMINALMASS_TMT10MASS_MAP[nominal_mass],
-                                                          TMT610_NOMINALMASS_TMT10MASS_MAP[nominal_mass]) \
+                                                          TMT610_NOMINALMASS_TMT6MASS_MAP[nominal_mass]) \
                                                       - TMT10_PADDING_EACHSIDE
 
 # this is just 127, but let's define it cleanly
