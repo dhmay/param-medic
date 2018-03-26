@@ -50,7 +50,7 @@ def read_ms2_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=
 
 
 def read_scans(ms2_file, precursor_from_zline=True, should_calc_zs_mz_diffs=False,
-               require_rt=False, should_allow_missing_charge=True):
+               require_rt=False, should_allow_missing_charge=True, ms_levels=(2)):
     """
     yield all scans in the file at ms2_filepath
     :param ms2_file:

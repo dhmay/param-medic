@@ -89,7 +89,7 @@ def read_scan(scan, default_scan_number=None, should_allow_missing_charge=True):
         return parammedic.util.MSSpectrum(scan_number, retention_time,
                                           mz_array,
                                           intensity_array)
-    elif ms_level == 2:
+    elif ms_level in (2, 3):
         precursor_selected_ion_map = scan['precursorList']['precursor'][0]['selectedIonList']['selectedIon'][0]
         precursor_mz = precursor_selected_ion_map['selected ion m/z']
         if 'charge state' in precursor_selected_ion_map:
@@ -136,10 +136,10 @@ def read_scan(scan, default_scan_number=None, should_allow_missing_charge=True):
         return parammedic.util.MS2Spectrum(scan_number, retention_time,
                                            mz_array,
                                            intensity_array,
-                                           precursor_mz, charge,
+                                           precursor_mz, charge, level=ms_level,
                                            activation_type=activation_type)
     else:
-        logger.debug("Unhandleable scan level %d" % ms_level)
+        raise ValueError("Unhandleable scan level %d" % ms_level)
 
 
 # example pyteomics.mzml ms2 scan object:

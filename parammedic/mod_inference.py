@@ -12,6 +12,7 @@ from scipy.stats import ttest_ind
 
 from parammedic.util import RunAttributeDetector, calc_mplush_from_mz_charge
 from parammedic.binning import calc_binidx_for_mass_precursor, calc_binidx_for_mz_fragment
+import bisect
 
 __author__ = "Damon May"
 __copyright__ = "Copyright (c) 2016 Damon May"
@@ -203,6 +204,153 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
         return result
 
 
+# at least this many of the four TMT10 peaks must comprise at least this proportion of the
+# TMT610_WINDOW_WIDTH area around the TMT10 peak and associated TMT6 peak 
+# in order to declare TMT10 present
+TMT610_MINPEAKS_TMT_PRESENT_FOR_DECISION = 1
+TMT610_MIN_TMT10_PROPORTION_FOR_DECISION = 0.1
+
+TMT610_DOUBLE_REAGENT_PEAK_NOMINALMASSES = [127, 128, 129, 130]
+# TMT6 masses: 126.12773 127.12476 128.13443 129.13147 130.14114 131.13818
+
+# the (absolute) difference between TMT10 and TMT6 masses, for nominal masses 128 and 130.
+# (I got the ones for 127 and 139 from another source). I'm using these as a rough guide
+# to define the window around both peaks that I'm considering
+TMT10_MASSDIFF_FROM6 = .00632
+TMT10_PADDING_EACHSIDE = TMT10_MASSDIFF_FROM6
+TMT610_WINDOW_WIDTH = TMT10_MASSDIFF_FROM6 * 2 + TMT10_MASSDIFF_FROM6
+
+# small window around each individual expected peak, for use in deciding
+# whether each TMT10 peak is present
+TMT610_PEAK_WIDTH_FOR_DETECT = 0.005
+
+# map from nominal mass to precise TMT6 mass
+TMT610_NOMINALMASS_TMT6MASS_MAP = {
+    127: 127.12476,
+    128: 128.13443,
+    129: 129.13147,
+    130: 130.14114
+}
+
+# map from nominal mass to precise TMT10 mass
+# 127 and 129 from https://pubs-acs-org.offcampus.lib.washington.edu/doi/full/10.1021/ac301553x
+# 128 and 130 from original TMT10 paper
+TMT610_NOMINALMASS_TMT10MASS_MAP = {
+    127: 127.1310808,
+    128: 128.13443 - TMT10_MASSDIFF_FROM6,
+    129: 129.1377904,
+    130: 130.14114 - TMT10_MASSDIFF_FROM6
+}
+
+# map from each nominal mass to the minimum mass in the window to consider
+TMT610_NOMINALMASS_MINBINMASS_MAP = {}
+
+# define the minimum TMT mass (6 or 10) for each nominal mass
+for nominal_mass in TMT610_NOMINALMASS_TMT6MASS_MAP:
+    TMT610_NOMINALMASS_MINBINMASS_MAP[nominal_mass] = min(TMT610_NOMINALMASS_TMT10MASS_MAP[nominal_mass],
+                                                          TMT610_NOMINALMASS_TMT10MASS_MAP[
+                                                              nominal_mass]) - TMT10_PADDING_EACHSIDE
+
+# this is just 127, but let's define it cleanly
+TMT610_SMALLEST_NOMINAL_MASS = min(TMT610_NOMINALMASS_MINBINMASS_MAP)
+
+# define the range of values that TMT peaks can occur in
+TMT610_SMALLEST_BIN_CENTER = TMT610_SMALLEST_NOMINAL_MASS * util.AVERAGINE_PEAK_SEPARATION
+TMT610_SMALLEST_BIN_MINMASS = TMT610_SMALLEST_BIN_CENTER - util.AVERAGINE_PEAK_SEPARATION / 2
+TMT610_BIGGEST_BIN_MAXMASS = TMT610_NOMINALMASS_MINBINMASS_MAP[
+                                 max(TMT610_DOUBLE_REAGENT_PEAK_NOMINALMASSES)] + TMT610_WINDOW_WIDTH
+
+# Minimum number of peaks within the window around each nominal mass in order to try to
+# detect the presence of TMT 10
+TMT610_MINPEAKS_FOR_DETECT = 30
+
+
+class TMT6vs10Detector(RunAttributeDetector):
+    """
+    Class for detecting the presence of TMT10. If not detected, assume TMT6.
+    Basic approach is to define a small window around, for each nominal mass that could
+    have TMT6 and TMT10 peaks in it, both of those peaks, and assess the proportion of
+    observed peaks in that window that fall into a small range around the TMT peak.
+    """
+
+
+    def __init__(self):
+        self.nominalmass_allpeaks_map = {}
+        for doublepeak_nominalmass in TMT610_DOUBLE_REAGENT_PEAK_NOMINALMASSES:
+           self.nominalmass_allpeaks_map[doublepeak_nominalmass] = []
+
+    def process_spectrum(self, spectrum, binned_spectrum):
+        """
+        Process a single spectrum, checking all fragment mzs against 
+        DOUBLE_REAGENT_PEAK_NOMINALMASSES and adding in-range fragments to each
+        bin appropriately
+        :param spectrum:
+        :return: a RunAttributeResult
+        """
+
+        if spectrum.level not in (2, 3):
+            return
+        # find the smallest peak in this scan that might be in one of the double-reagent bins
+        idx_smallestpossible = bisect.bisect_left(spectrum.mz_array, TMT610_SMALLEST_BIN_MINMASS)
+        assert (spectrum.mz_array[idx_smallestpossible] >= TMT610_SMALLEST_BIN_MINMASS)
+        # print(min(spectrum.mz_array))
+        curidx = idx_smallestpossible
+        while curidx < len(spectrum.mz_array) and spectrum.mz_array[curidx] < TMT610_BIGGEST_BIN_MAXMASS:
+            cur_mz = spectrum.mz_array[curidx]
+
+            # int() does floor. Add 1 because 0-index vs. 1-index
+            cur_bin = int((cur_mz - util.AVERAGINE_PEAK_SEPARATION / 2) / util.AVERAGINE_PEAK_SEPARATION) + 1
+            if TMT610_NOMINALMASS_MINBINMASS_MAP[cur_bin] < cur_mz < TMT610_NOMINALMASS_MINBINMASS_MAP[
+                cur_bin] + TMT610_WINDOW_WIDTH:
+                # print("{}: {} + {}".format(cur_mz, cur_bin, cur_offset))
+                self.nominalmass_allpeaks_map[cur_bin].append(cur_mz)
+            curidx += 1
+
+    def summarize(self):
+        """
+        Calculate the average proportion of signal coming from reporter ions across
+        all spectra
+        :return: a tuple of values indicating whether TMT10 is present and how many TMT10 peaks were detected
+        """
+        n_peaks_with_enough_TMT10_signal = 0
+        for nominalmass in self.nominalmass_allpeaks_map:
+            peaks_this_nominalmass = self.nominalmass_allpeaks_map[nominalmass]
+            n_peaks_this_nominalmass = len(peaks_this_nominalmass)
+            logger.debug("nominal mass {}: {}".format(nominalmass, n_peaks_this_nominalmass))
+            if n_peaks_this_nominalmass >= TMT610_MINPEAKS_FOR_DETECT:
+                mzs_this_nominalmass = self.nominalmass_allpeaks_map[nominalmass]
+                smallest_mz_thisbin = nominalmass * util.AVERAGINE_PEAK_SEPARATION - util.AVERAGINE_PEAK_SEPARATION / 2
+                logger.debug("    {}-{}".format(min(mzs_this_nominalmass), max(mzs_this_nominalmass)))
+                # logger.debug(sorted(mzs_this_nominalmass))
+                # find the proportion of peaks falling in the expected range for each TMT ion at this nominal mass
+                peak6_mz_thisnominalmass = TMT610_NOMINALMASS_TMT6MASS_MAP[nominalmass]
+                peak10_mz_thisnominalmass = TMT610_NOMINALMASS_TMT10MASS_MAP[nominalmass]
+    
+                minmass_peak6 = peak6_mz_thisnominalmass - TMT610_PEAK_WIDTH_FOR_DETECT / 2
+                maxmass_peak6 = peak6_mz_thisnominalmass + TMT610_PEAK_WIDTH_FOR_DETECT / 2
+                minmass_peak10 = peak10_mz_thisnominalmass - TMT610_PEAK_WIDTH_FOR_DETECT / 2
+                maxmass_peak10 = peak10_mz_thisnominalmass + TMT610_PEAK_WIDTH_FOR_DETECT / 2
+                #charts.hist(mzs_this_nominalmass, bins=100, title='{}'.format(nominalmass)).show()
+    
+                n_peaks_near_peak6 = bisect.bisect_left(mzs_this_nominalmass, maxmass_peak6) - bisect.bisect_left(
+                    mzs_this_nominalmass, minmass_peak6) + 1
+                n_peaks_near_peak10 = bisect.bisect_left(mzs_this_nominalmass, maxmass_peak10) - bisect.bisect_left(
+                    mzs_this_nominalmass, minmass_peak10) + 1
+                proportion_near_peak6 = float(n_peaks_near_peak6) / n_peaks_this_nominalmass
+                proportion_near_peak10 = float(n_peaks_near_peak10) / n_peaks_this_nominalmass
+                logger.debug("Near 6: {}. Near 10: {}".format(proportion_near_peak6, proportion_near_peak10))
+                if proportion_near_peak10 > TMT610_MIN_TMT10_PROPORTION_FOR_DECISION:
+                    logger.debug("Peak {} has TMT10 signal".format(nominalmass))
+                    n_peaks_with_enough_TMT10_signal += 1
+            else:
+                logger.debug("Too few, failing peak.")
+        if n_peaks_with_enough_TMT10_signal >= TMT610_MINPEAKS_TMT_PRESENT_FOR_DECISION:
+            logger.debug("Detected TMT 10-plex! {} peaks had signal.".format(n_peaks_with_enough_TMT10_signal))
+        else:
+            logger.debug("Did NOT detect TMT 10-plex. Only {} peaks had signal.".format(n_peaks_with_enough_TMT10_signal))
+        return n_peaks_with_enough_TMT10_signal >= TMT610_MINPEAKS_TMT_PRESENT_FOR_DECISION, n_peaks_with_enough_TMT10_signal
+
+
 class ReporterIonProportionCalculator(RunAttributeDetector):
     """
     Class that accumulates the proportion of MS/MS fragment signal that's accounted for
@@ -229,6 +377,9 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
                 self.reporter_ion_type_bins_map[reporter_ion_type].append(binidx)
                 self.reportertype_bin_sum_proportion_map[reporter_ion_type][binidx] = 0.0
 
+        self.tmt10detector = TMT6vs10Detector()
+        # keep track of whether we saw any MS3 scans. Those are a reason to check for TMT10
+        self.found_ms3_scans = False
         logger.debug("Reporter ion type count (including control): %d" % len(self.reporter_ion_type_bins_map))
 
     def process_spectrum(self, spectrum, binned_spectrum):
@@ -238,9 +389,12 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
         :param spectrum:
         :return: a RunAttributeResult
         """
+        if spectrum.level == 3:
+            self.found_ms3_scans = True
         for reporter_type in self.reporter_ion_type_bins_map:
             for mz_bin in self.reportertype_bin_sum_proportion_map[reporter_type]:
                 self.reportertype_bin_sum_proportion_map[reporter_type][mz_bin] += binned_spectrum[mz_bin]
+        self.tmt10detector.process_spectrum(spectrum, binned_spectrum)
 
     def summarize(self):
         """
@@ -318,25 +472,40 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             itraq8_is_present = False
             itraq4_is_present = False
 
+        n_tmt10_peaks_detected = 0
         # handle TMT
         if "TMT_6plex" in significant_reporter_types:
-            logger.info("TMT: 6-plex reporter ions detected")
+            logger.info("TMT: 6-plex/10-plex reporter ions detected")
             result.search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_TMT_6PLEX, True))
             result.search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_TMT_6PLEX, True))
             if "TMT_2plex" not in significant_reporter_types:
                 logger.warn("    No TMT 2-plex reporters detected, only 6-plex")
             tmt6_is_present = True
             tmt2_is_present = False
+            tmt10_is_present = False
         elif "TMT_2plex" in significant_reporter_types:
             logger.info("TMT: 2-plex reporter ions detected")
             result.search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_TMT_2PLEX, True))
             result.search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_TMT_2PLEX, True))
             tmt6_is_present = False
+            tmt10_is_present = False
             tmt2_is_present = True
         else:
             logger.info("TMT: no reporter ions detected")
             tmt6_is_present = False
             tmt2_is_present = False
+            tmt10_is_present = False
+        logger.debug("Found MS3 scans? {}".format(self.found_ms3_scans))
+        if tmt6_is_present or self.found_ms3_scans:
+            # it's either TMT6 or TMT10. Let's ask tmt6vs10detector
+            logger.info("  checking whether TMT10 is present...")
+            tmt10_is_present, n_tmt10_peaks_detected = self.tmt10detector.summarize()
+            if tmt10_is_present:
+                print("TMT10 is present.")
+                tmt6_is_present = False
+                tmt2_is_present = False
+            else:
+                print("TMT10 is not present.")
 
         # declare label to be present or not, and report the appropriate statistic.
         result.name_value_pairs['iTRAQ_8plex_present'] = 'T' if itraq8_is_present else 'F'
@@ -345,6 +514,8 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
         result.name_value_pairs['iTRAQ_4plex_statistic'] = str(reportertype_tstatistic_map['iTRAQ_4plex'])
         result.name_value_pairs['TMT_6plex_present'] = 'T' if tmt6_is_present else 'F'
         result.name_value_pairs['TMT_6plex_statistic'] = str(reportertype_tstatistic_map['TMT_6plex'])
+        result.name_value_pairs['TMT_10plex_present'] = 'T' if tmt10_is_present else 'F'
+        result.name_value_pairs['TMT_10plex_statistic'] = str(n_tmt10_peaks_detected)
         result.name_value_pairs['TMT_2plex_present'] = 'T' if tmt2_is_present else 'F'
         result.name_value_pairs['TMT_2plex_statistic'] = str(reportertype_tstatistic_map['TMT_2plex'])
 

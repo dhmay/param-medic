@@ -74,8 +74,8 @@ class MS2Spectrum(MSSpectrum):
     represents a single MS/MS spectrum
     """
     def __init__(self, scan_number, retention_time, mz_array, intensity_array,
-                 precursor_mz, charge, activation_type=None):
-        MSSpectrum.__init__(self, scan_number, retention_time, 2, mz_array, intensity_array)
+                 precursor_mz, charge, activation_type=None, level=2):
+        MSSpectrum.__init__(self, scan_number, retention_time, level, mz_array, intensity_array)
         self.precursor_mz = precursor_mz
         self.charge = charge
         self.activation_type = activation_type

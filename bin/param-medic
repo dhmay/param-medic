@@ -351,7 +351,7 @@ def generate_spectra(spectra_file, min_scan_frag_peaks):
     else:
         raise ValueError('generate_spectra, can\'t determine file type from name. Name=%s' % spectra_file.name)
 
-    for spectrum in io_module.read_ms2_scans(handle):
+    for spectrum in io_module.read_scans(handle, ms_levels=(2,3)):
         # check peak count against threshold
         if len(spectrum.mz_array) >= min_scan_frag_peaks:
             yield spectrum
