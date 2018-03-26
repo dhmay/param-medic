@@ -207,22 +207,15 @@ class PhosphoLossProportionCalculator(RunAttributeDetector):
 # at least this many of the four TMT10 peaks must comprise at least this proportion of the
 # TMT610_WINDOW_WIDTH area around the TMT10 peak and associated TMT6 peak 
 # in order to declare TMT10 present
-TMT610_MINPEAKS_TMT_PRESENT_FOR_DECISION = 1
+TMT610_MINPEAKS_TMT_PRESENT_FOR_DECISION = 2
 TMT610_MIN_TMT10_PROPORTION_FOR_DECISION = 0.1
 
-TMT610_DOUBLE_REAGENT_PEAK_NOMINALMASSES = [127, 128, 129, 130]
+# define the nominal and precise TMT6 and TMT10 reporter ion masses
+# http://www.unimod.org/modifications_view.php?editid1=737
 # TMT6 masses: 126.12773 127.12476 128.13443 129.13147 130.14114 131.13818
+# TMT10 masses: 127.13108 128.12811 129.13779 130.13482
 
-# the (absolute) difference between TMT10 and TMT6 masses, for nominal masses 128 and 130.
-# (I got the ones for 127 and 139 from another source). I'm using these as a rough guide
-# to define the window around both peaks that I'm considering
-TMT10_MASSDIFF_FROM6 = .00632
-TMT10_PADDING_EACHSIDE = TMT10_MASSDIFF_FROM6
-TMT610_WINDOW_WIDTH = TMT10_MASSDIFF_FROM6 * 2 + TMT10_MASSDIFF_FROM6
-
-# small window around each individual expected peak, for use in deciding
-# whether each TMT10 peak is present
-TMT610_PEAK_WIDTH_FOR_DETECT = 0.005
+TMT610_DOUBLE_REAGENT_PEAK_NOMINALMASSES = [127, 128, 129, 130]
 
 # map from nominal mass to precise TMT6 mass
 TMT610_NOMINALMASS_TMT6MASS_MAP = {
@@ -233,14 +226,25 @@ TMT610_NOMINALMASS_TMT6MASS_MAP = {
 }
 
 # map from nominal mass to precise TMT10 mass
-# 127 and 129 from https://pubs-acs-org.offcampus.lib.washington.edu/doi/full/10.1021/ac301553x
-# 128 and 130 from original TMT10 paper
 TMT610_NOMINALMASS_TMT10MASS_MAP = {
-    127: 127.1310808,
-    128: 128.13443 - TMT10_MASSDIFF_FROM6,
-    129: 129.1377904,
-    130: 130.14114 - TMT10_MASSDIFF_FROM6
+    127: 127.13108,
+    128: 128.12811,
+    129: 129.13779,
+    130: 130.13482
 }
+
+# Define the window to use for TMT6 and TMT10 peak assessment
+
+# this is roughly the difference between the TMT6 and TMT10 masses
+TMT10_MASSDIFF_FROM6 = .00632
+# amount of padding on each size of the 6 and 10 peaks
+TMT10_PADDING_EACHSIDE = TMT10_MASSDIFF_FROM6
+# window width
+TMT610_WINDOW_WIDTH = TMT10_PADDING_EACHSIDE * 2 + TMT10_MASSDIFF_FROM6
+
+# small window around each individual expected peak, for use in deciding
+# whether each TMT10 peak is present
+TMT610_PEAK_WIDTH_FOR_DETECT = 0.0001
 
 # map from each nominal mass to the minimum mass in the window to consider
 TMT610_NOMINALMASS_MINBINMASS_MAP = {}
@@ -248,8 +252,8 @@ TMT610_NOMINALMASS_MINBINMASS_MAP = {}
 # define the minimum TMT mass (6 or 10) for each nominal mass
 for nominal_mass in TMT610_NOMINALMASS_TMT6MASS_MAP:
     TMT610_NOMINALMASS_MINBINMASS_MAP[nominal_mass] = min(TMT610_NOMINALMASS_TMT10MASS_MAP[nominal_mass],
-                                                          TMT610_NOMINALMASS_TMT10MASS_MAP[
-                                                              nominal_mass]) - TMT10_PADDING_EACHSIDE
+                                                          TMT610_NOMINALMASS_TMT10MASS_MAP[nominal_mass]) \
+                                                      - TMT10_PADDING_EACHSIDE
 
 # this is just 127, but let's define it cleanly
 TMT610_SMALLEST_NOMINAL_MASS = min(TMT610_NOMINALMASS_MINBINMASS_MAP)
@@ -272,7 +276,6 @@ class TMT6vs10Detector(RunAttributeDetector):
     have TMT6 and TMT10 peaks in it, both of those peaks, and assess the proportion of
     observed peaks in that window that fall into a small range around the TMT peak.
     """
-
 
     def __init__(self):
         self.nominalmass_allpeaks_map = {}
@@ -498,14 +501,14 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
         logger.debug("Found MS3 scans? {}".format(self.found_ms3_scans))
         if tmt6_is_present or self.found_ms3_scans:
             # it's either TMT6 or TMT10. Let's ask tmt6vs10detector
-            logger.info("  checking whether TMT10 is present...")
             tmt10_is_present, n_tmt10_peaks_detected = self.tmt10detector.summarize()
             if tmt10_is_present:
-                print("TMT10 is present.")
+                logger.info("TMT10 is present, {} TMT10 peaks detected.".format(n_tmt10_peaks_detected))
+                # declare TMT6 and TMT2 to be absent
                 tmt6_is_present = False
                 tmt2_is_present = False
             else:
-                print("TMT10 is not present.")
+                logger.info("TMT10 is not present, {} TMT10 peaks detected.".format(n_tmt10_peaks_detected))
 
         # declare label to be present or not, and report the appropriate statistic.
         result.name_value_pairs['iTRAQ_8plex_present'] = 'T' if itraq8_is_present else 'F'
