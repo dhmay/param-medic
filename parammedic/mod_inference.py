@@ -475,40 +475,54 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             itraq8_is_present = False
             itraq4_is_present = False
 
-        n_tmt10_peaks_detected = 0
         # handle TMT
+        
+        # first check for TMT10, if checking is justified
+        n_tmt10_peaks_detected = 0
+        logger.debug("Found MS3 scans? {}".format(self.found_ms3_scans))
+        if "TMT_6plex" in significant_reporter_types or self.found_ms3_scans:
+            # Either we have TMT6/10, or there are MS3 scans. Either way, we might have TMT10.
+            # Let's ask tmt6vs10detector
+            tmt10_is_present, n_tmt10_peaks_detected = self.tmt10detector.summarize()
+            if tmt10_is_present:
+                logger.info("TMT10 is present, {} TMT10 peaks detected.".format(n_tmt10_peaks_detected))
+                # declare TMT6 and TMT2 to be absent
+                significant_reporter_types.remove("TMT_6plex")
+                significant_reporter_types.add("TMT_10plex")
+            else:
+                logger.info("TMT10 is not present, {} TMT10 peaks detected.".format(n_tmt10_peaks_detected))
+                
         if "TMT_6plex" in significant_reporter_types:
-            logger.info("TMT: 6-plex/10-plex reporter ions detected")
+            logger.info("TMT: 6-plex reporter ions detected")
             result.search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_TMT_6PLEX, True))
             result.search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_TMT_6PLEX, True))
             if "TMT_2plex" not in significant_reporter_types:
                 logger.warn("    No TMT 2-plex reporters detected, only 6-plex")
-            tmt6_is_present = True
             tmt2_is_present = False
+            tmt6_is_present = True
             tmt10_is_present = False
+        elif "TMT_10plex" in significant_reporter_types:
+            result.search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_TMT_6PLEX, True))
+            result.search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_TMT_6PLEX, True))
+            if "TMT_2plex" not in significant_reporter_types:
+                logger.warn("    No TMT 2-plex reporters detected, only 10-plex")
+            tmt2_is_present = False
+            tmt6_is_present = False
+            tmt10_is_present = True
         elif "TMT_2plex" in significant_reporter_types:
             logger.info("TMT: 2-plex reporter ions detected")
             result.search_modifications.append(util.Modification("K", SEARCH_MOD_MASS_TMT_2PLEX, True))
             result.search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_TMT_2PLEX, True))
+            tmt2_is_present = True
             tmt6_is_present = False
             tmt10_is_present = False
-            tmt2_is_present = True
         else:
             logger.info("TMT: no reporter ions detected")
             tmt6_is_present = False
             tmt2_is_present = False
             tmt10_is_present = False
-        logger.debug("Found MS3 scans? {}".format(self.found_ms3_scans))
-        if tmt6_is_present or self.found_ms3_scans:
-            # it's either TMT6 or TMT10. Let's ask tmt6vs10detector
-            tmt10_is_present, n_tmt10_peaks_detected = self.tmt10detector.summarize()
-            if tmt10_is_present:
-                logger.info("TMT10 is present, {} TMT10 peaks detected.".format(n_tmt10_peaks_detected))
-                # declare TMT6 and TMT2 to be absent
-                tmt6_is_present = False
-                tmt2_is_present = False
-            else:
-                logger.info("TMT10 is not present, {} TMT10 peaks detected.".format(n_tmt10_peaks_detected))
+
+
 
         # declare label to be present or not, and report the appropriate statistic.
         result.name_value_pairs['iTRAQ_8plex_present'] = 'T' if itraq8_is_present else 'F'
