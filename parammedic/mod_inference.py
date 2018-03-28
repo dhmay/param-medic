@@ -2,6 +2,8 @@
 """
 Code to infer the presence or absence of each of a defined set of modifications in
 a given run.
+
+Each type of modification is detected by a separate class that inherits from RunAttributeDetector.
 """
 
 import logging
@@ -12,6 +14,8 @@ from scipy.stats import ttest_ind
 
 from parammedic.util import RunAttributeDetector, calc_mplush_from_mz_charge
 from parammedic.binning import calc_binidx_for_mass_precursor, calc_binidx_for_mz_fragment
+
+# for finding locations of m/z peaks in sorted lists
 import bisect
 
 __author__ = "Damon May"
@@ -32,7 +36,6 @@ __version__ = ""
 SILAC_MOD_BIN_DISTANCES = [4, 6, 8, 10]
 # z-score cutoff above which we consider a particular SILAC separation to be present
 SILAC_ZSCORE_CUTOFF = 4.0
-
 
 # TMT constants
 # I got the exact values from here: http://lgatto.github.io/MSnbase/reference/TMT6.html

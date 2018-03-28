@@ -1,7 +1,8 @@
 #cython: boundscheck=False
 #cython: cdivision=True
 """
-Utility code used by multiple modules
+Code to bin mass spectra into bins of arbitrary size (but, in actuality, size util.AVERAGINE_PEAK_SEPARATION).
+Cythonized for a large speedup.
 """
 
 import math
@@ -12,42 +13,11 @@ cimport cython
 from cpython cimport array
 import util
 
+# type definitions
 NDARRAY_DTYPE = np.float32
 ctypedef np.float32_t NDARRAY_DTYPE_t
 
-
-# mass of a hydrogen atom
-HYDROGEN_MASS = 1.00794
-
-# N-terminal and C-terminal modifications are indicated with these keys.
-# Amino acid modifications are indicated with the relevant AA
-MOD_TYPE_KEY_NTERM = "NTERM"
-MOD_TYPE_KEY_CTERM = "CTERM"
-
-# unmodified masses of each amino acid
-AA_UNMOD_MASSES = {
-    'A': 71.03711,
-    'C': 103.00919, # note no iodoacetamide
-    'D': 115.02694,
-    'E': 129.04259,
-    'F': 147.06841,
-    'G': 57.02146,
-    'H': 137.05891,
-    'I': 113.08406,
-    'K': 128.09496,
-    'L': 113.08406,
-    'M': 131.04049,
-    'N': 114.04293,
-    'P': 97.05276,
-    'Q': 128.05858,
-    'R': 156.10111,
-    'S': 87.03203,
-    'T': 101.04768,
-    'V': 99.06841,
-    'W': 186.07931,
-    'Y': 163.06333
-}
-
+# constants describing the locations of the bins
 BINNING_MIN_MZ = 50.5 * util.AVERAGINE_PEAK_SEPARATION
 BINNING_MAX_MZ = 6000.5 * util.AVERAGINE_PEAK_SEPARATION
 N_BINS = int(float(BINNING_MAX_MZ - BINNING_MIN_MZ) / util.AVERAGINE_PEAK_SEPARATION) + 1
@@ -78,6 +48,9 @@ def calc_binidx_for_mz_fragment(float mz, float min_mz_for_bin=BINNING_MIN_MZ,
     return max(0, int(math.floor(relative_mz / bin_size)))
 
 
+# below is a pure-Python implementation of spectrum binning.
+# I've eschewed this in favor of Cython. Keeping the code here for reference, in case
+# the Cython implementation is confusing.
 #def bin_spectrum(mz_array, intensity_array,
 #                 fragment_min_mz=BINNING_MIN_MZ, fragment_max_mz=BINNING_MAX_MZ,
 #                 bin_size=AVERAGINE_PEAK_SEPARATION):

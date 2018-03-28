@@ -123,7 +123,7 @@ def float_greaterthanequalto0_type(x):
 
 def main():
     """
-    Handle arguments, create an ErrorCalculator, process all the spectra, and infer parameters.
+    Handle arguments, create all the objects that detect various things, process all the spectra, and infer parameters.
     :return:
     """
     args = declare_gather_args()
@@ -137,7 +137,7 @@ def main():
                         format="%(asctime)s %(levelname)s: %(message)s")
     if args.debug:
         logger.setLevel(logging.DEBUG)
-        # any module-specific debugging goes below
+        # add module-specific debuggers
         errorcalc.logger.setLevel(logging.DEBUG)
         mod_inference.logger.setLevel(logging.DEBUG)
         enzyme_inference.logger.setLevel(logging.DEBUG)
@@ -148,7 +148,9 @@ def main():
     script_start_time = datetime.now()
     logger.debug("Start time: %s" % script_start_time)
     
-    # each member of file_groups is a list of files that will be processed together
+    # each member of file_groups is a list of files that will be processed together.
+    # The structure below allows for multiple groups of multiple files each, but in practice we're either
+    # dealing with one group containing all the files, or a bunch of groups each containing one file.
     infile_groups = []
     if args.process_together:
         # process all files as a single group
@@ -165,27 +167,32 @@ def main():
     elif len(infile_groups) > 1:
         logger.info("Processing input files separately.")
 
-    # a list of dictionaries filled with the TSV output
+    # a list of dictionaries filled with the TSV output, one for each group of files
     output_name_value_dicts = []
+
+    # loop over the groups of input files to process together
     for infile_group in infile_groups:
         # list of all run attribute detectors
         run_attribute_detectors = []
-        # list of just the modification detectors (if any)
+        # list of just the modification detectors (if any). Each modification detector produces a
+        # detector_result, so we need to be able to iterate through just them.
         modification_detectors = []
+
         error_calculator = None
         if not args.noerrorcalc:
+            # add the mass error calculator
             error_calculator = errorcalc.MultiChargeErrorCalculator(min_precursor_mz=args.min_precursor_mz,
-                                                     max_precursor_mz=args.max_precursor_mz,
-                                                     min_frag_mz=args.min_frag_mz,
-                                                     max_frag_mz=args.max_frag_mz,
-                                                     charges=charges_for_errorcalc,
-                                                     min_scan_frag_peaks=args.min_scan_frag_peaks,
-                                                     topn_frag_peaks=args.top_n_frag_peaks,
-                                                     min_common_frag_peaks=args.min_common_frag_peaks,
-                                                     pair_topn_frag_peaks=args.pair_top_n_frag_peaks,
-                                                     max_scan_separation=args.max_scan_separation,
-                                                     max_precursor_deltappm=args.max_precursor_delta_ppm,
-                                                     min_peakpairs=args.min_peak_pairs)
+                                                                    max_precursor_mz=args.max_precursor_mz,
+                                                                    min_frag_mz=args.min_frag_mz,
+                                                                    max_frag_mz=args.max_frag_mz,
+                                                                    charges=charges_for_errorcalc,
+                                                                    min_scan_frag_peaks=args.min_scan_frag_peaks,
+                                                                    topn_frag_peaks=args.top_n_frag_peaks,
+                                                                    min_common_frag_peaks=args.min_common_frag_peaks,
+                                                                    pair_topn_frag_peaks=args.pair_top_n_frag_peaks,
+                                                                    max_scan_separation=args.max_scan_separation,
+                                                                    max_precursor_deltappm=args.max_precursor_delta_ppm,
+                                                                    min_peakpairs=args.min_peak_pairs)
             run_attribute_detectors.append(error_calculator)
 
         # unless mod inference is suppressed, add each of the modification detectors
@@ -195,13 +202,14 @@ def main():
             phospho_detector = mod_inference.PhosphoLossProportionCalculator()
             modification_detectors.extend([silac_detector, reporter_detector, phospho_detector])
         run_attribute_detectors.extend(modification_detectors)
-    
+
+        # count spectra that go by
         n_spectra_processed = 0
         
         # map from activation type to count of scans with that type.
         activationtype_scancount_map = {}
         
-        # process each group of input files
+        # process each file in the group
         for infile in infile_group:
             logger.info("Processing input file %s..." % infile.name)
             for spectrum in generate_spectra(infile, args.min_scan_frag_peaks):
@@ -234,7 +242,7 @@ def main():
             quit(1)
     
         logger.debug("Processed all spectra. Summarizing...")
-        # build an OrderedDict of all the stuff to output
+        # build an OrderedDict of all the stuff to output in tsv format, so the columns are in a known order.
         output_name_value_dict = OrderedDict()
         output_name_value_dicts.append(output_name_value_dict)
         if len(infile_group) == 1:
@@ -255,7 +263,7 @@ def main():
             output_name_value_dict['fragment_prediction_th'] = str(fragment_prediction_th) if fragment_prediction_th is not None else 'ERROR'
             output_name_value_dict['fragment_sigma_ppm'] = str(frag_sigma_ppm) if frag_sigma_ppm is not None else 'ERROR'
 
-        # check for each of the modifications
+        # add search parameter suggestions for each detected modification
         detected_modifications = []
         for modification_detector in modification_detectors:
             detector_result = modification_detector.summarize()
@@ -264,7 +272,16 @@ def main():
                 output_name_value_dict[name] = detector_result.name_value_pairs[name]
         search_parameter_recommendations.extend(detected_modifications)
 
-        # conditionally analyze enzyme
+        # print out search parameter recommendations, if any.
+        if search_parameter_recommendations:
+            logger.info("\nSearch parameter recommendations:")
+            for modification in search_parameter_recommendations:
+                logger.info(modification)
+        else:
+            logger.info("No modifications detected requiring search parameter changes.")
+
+        # conditionally analyze enzyme.
+        # This functionality is highly speculative and, honestly, really shouldn't be here. Should be on a branch.
         if args.enzyme:
             # go back through the input files
             logger.info("Inferring enzyme...")
@@ -299,17 +316,12 @@ def main():
         else:
             logger.debug("No activation type information was available in input file(s)")
 
-        if search_parameter_recommendations:
-            logger.info("\nSearch parameter recommendations:")
-            for modification in search_parameter_recommendations:
-                logger.info(modification)
-        else:
-            logger.info("No modifications detected requiring search parameter changes.")
+        # warn if we didn't see enough spectra.
         if n_spectra_processed < MIN_SPECTRA_FOR_CONFIDENCE:
             logger.info("WARNING: only %d spectra were analyzed. Confidence in all assessments is low."
                         % n_spectra_processed)
 
-    # print tab-separated output
+    # print tab-separated output.
     print("\t".join(output_name_value_dicts[0].keys()))
     for outdict in output_name_value_dicts:
         # if a value is "nan", change it to "ERROR".
@@ -336,7 +348,7 @@ def format_val(x):
 
 def generate_spectra(spectra_file, min_scan_frag_peaks):
     """
-    a generator for spectra from a .ms2 or .mzML file
+    a generator for MS2 and MS3 spectra from a .ms2 or .mzML file
     :param spectra_file:
     :return:
     """
@@ -350,6 +362,7 @@ def generate_spectra(spectra_file, min_scan_frag_peaks):
     else:
         raise ValueError('generate_spectra, can\'t determine file type from name. Name=%s' % spectra_file.name)
 
+    # send both scan levels 2 and 3 to each handler.
     for spectrum in io_module.read_scans(handle, ms_levels=(2,3)):
         # check peak count against threshold
         if len(spectrum.mz_array) >= min_scan_frag_peaks:
