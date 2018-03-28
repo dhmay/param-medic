@@ -110,6 +110,10 @@ class MultiChargeErrorCalculator(RunAttributeDetector):
 
     The per-charge error calculators assemble the pairs of precursors and fragments, and
     this class combines the information to produce the final estimates.
+
+    These classes are structured this way because, when charges are known, we only want to
+    consider pairs of spectra that have the same charge, but the error estimate is a single
+    overall estimate that should use all those paired measurements.
     """
     def __init__(self, charges,
                  min_precursor_mz=DEFAULT_MIN_MZ_FOR_BIN_PRECURSOR,

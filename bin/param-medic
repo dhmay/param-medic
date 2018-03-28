@@ -168,7 +168,6 @@ def main():
     # a list of dictionaries filled with the TSV output
     output_name_value_dicts = []
     for infile_group in infile_groups:
-        # map from charge to the error calculator for that charge
         # list of all run attribute detectors
         run_attribute_detectors = []
         # list of just the modification detectors (if any)
