@@ -220,8 +220,8 @@ class MultiChargeErrorCalculator(RunAttributeDetector):
 
         n_zero_precursor_deltas = 0
         if len(paired_precursor_mzs) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
-            logger.debug("Using %d of %d peak pairs for precursor..." %
-                         (MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(paired_precursor_mzs)))
+            logger.info("Reducing %d to %d peak pairs for precursor..." %
+                         (len(paired_precursor_mzs), MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT))
             paired_precursor_mzs = random.sample(paired_precursor_mzs, MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT)
         precursor_distances_ppm = []
         for mz1, mz2 in paired_precursor_mzs:
@@ -265,6 +265,7 @@ class MultiChargeErrorCalculator(RunAttributeDetector):
         precursor_mu_ppm_2measures, precursor_sigma_ppm_2measures = None, None
         if not failed_precursor:
             try:
+                logger.info("Using {} peak pairs for precursor error estimation.".format(len(precursor_distances_ppm)))
                 precursor_mu_ppm_2measures, precursor_sigma_ppm_2measures = estimate_mu_sigma(precursor_distances_ppm, MIN_SIGMA_PPM)
             except Exception as e:
                 failed_precursor = True
@@ -292,14 +293,15 @@ class MultiChargeErrorCalculator(RunAttributeDetector):
         frag_mu_ppm_2measures, frag_sigma_ppm_2measures = None, None
         if not failed_fragment:
             if len(paired_fragment_peaks) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
-                logger.debug("Using %d of %d peak pairs for fragment..." %
-                             (MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT, len(paired_fragment_peaks)))
+                logger.info("Reducing %d to %d peak pairs for fragment..." %
+                             (len(paired_fragment_peaks), MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT))
                 paired_fragment_peaks = random.sample(paired_fragment_peaks, MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT)
             for fragpeak1, fragpeak2 in paired_fragment_peaks:
                 diff_th = fragpeak1[0] - fragpeak2[0]
                 frag_distances_ppm.append(diff_th * 1000000 / fragpeak1[0])
             try:
                 # estimate the parameters of the component distributions for each of the mixed distributions.
+                logger.info("Using {} peak pairs for fragment error estimation.".format(len(paired_fragment_peaks)))
                 frag_mu_ppm_2measures, frag_sigma_ppm_2measures = estimate_mu_sigma(frag_distances_ppm, MIN_SIGMA_PPM)
             except Exception as e:
                 failed_fragment = True
