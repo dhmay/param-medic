@@ -187,7 +187,6 @@ class MultiChargeErrorCalculator(RunAttributeDetector):
             # check the proportion of mass bins, in the whole file, that have multiple fragments.
             # If that's high, we might be looking at profile-mode data.
             if percharge_calculator.n_bins_one_frag + percharge_calculator.n_bins_multiple_frags == 0:
-                proportion_bins_multiple_frags = 0
                 logger.debug("No values in any bin!")
             else:
                 proportion_bins_multiple_frags = float(percharge_calculator.n_bins_multiple_frags) / \
@@ -278,18 +277,18 @@ class MultiChargeErrorCalculator(RunAttributeDetector):
         if len(paired_fragment_peaks) < self.min_peakpairs:
             failed_fragment = True
             fragment_message = "Need >= %d peak pairs to fit mixed distribution. Got only %d\nDetails:\n" % (self.min_peakpairs,
-                                                                                                             len(self.paired_fragment_peaks))
+                                                                                                             len(paired_fragment_peaks))
             for charge in self.charge_perchargecalculator_map:
                 percharge_calculator = self.charge_perchargecalculator_map[charge]
-                print("  Charge %d: \n" \
-                                "   Spectra in same averagine bin as another: %d\n" \
-                                "    ... and also within m/z tolerance: %d\n" \
-                                "    ... and also within scan range: %d\n" 
-                                "    ... and also with sufficient in-common fragments: %d\n"%
-                                 percharge_calculator.n_spectra_samebin_other_spectrum,
-                                 percharge_calculator.n_spectra_withinppm_other_spectrum,
-                                 percharge_calculator.n_spectra_withinppm_withinscans_other_spectrum,
-                                 len(percharge_calculator.paired_fragment_peaks))
+                print("   Charge %d\n" \
+                      "   Spectra in same averagine bin as another: %d\n" \
+                      "    ... and also within m/z tolerance: %d\n" \
+                      "    ... and also within scan range: %d\n" \
+                      "    ... and also with sufficient in-common fragments: %d\n" %
+                      (charge, percharge_calculator.n_spectra_samebin_other_spectrum,
+                      percharge_calculator.n_spectra_withinppm_other_spectrum,
+                      percharge_calculator.n_spectra_withinppm_withinscans_other_spectrum,
+                      len(percharge_calculator.paired_fragment_peaks)))
         frag_mu_ppm_2measures, frag_sigma_ppm_2measures = None, None
         if not failed_fragment:
             if len(paired_fragment_peaks) > MAX_PEAKPAIRS_FOR_DISTRIBUTION_FIT:
@@ -543,6 +542,12 @@ class PerChargeErrorCalculator(object):
                         # count the fragment peaks in common
                         self.n_spectra_withinppm_withinscans_other_spectrum += 1
                         paired_fragments_bybin = self.pair_fragments_bybin(prev_spec_obs, current_spec_obs)
+#                        if len(paired_fragments_bybin) >= 20:
+#                            print("** {}: {} and {}".format(len(paired_fragments_bybin),
+#                                                        len(prev_spec_obs.topn_fragments),
+#                                                        len(current_spec_obs.topn_fragments)))
+#                        print("    {}".format(prev_spec_obs.topn_fragments))
+#                        print("    {}".format(current_spec_obs.topn_fragments))
                         if len(paired_fragments_bybin) >= self.min_common_frag_peaks:
                             # we've got a pair! record everything
                             minints = [min(x[1], y[1]) for x, y in paired_fragments_bybin]

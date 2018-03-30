@@ -14,6 +14,7 @@ from parammedic import errorcalc, ms2_io, mzml_io, mod_inference, enzyme_inferen
 from parammedic import __version__
 import gzip
 from collections import OrderedDict
+import time
 
 __author__ = "Damon May"
 __copyright__ = "Copyright (c) 2016 Damon May"
@@ -208,6 +209,8 @@ def main():
         
         # map from activation type to count of scans with that type.
         activationtype_scancount_map = {}
+
+        thisgroup_start_time = time.time()
         
         # process each file in the group
         for infile in infile_group:
@@ -215,7 +218,8 @@ def main():
             for spectrum in generate_spectra(infile, args.min_scan_frag_peaks):
                 # report progress
                 if n_spectra_processed % SPECTRUM_PROCESSED_REPORT_INTERVAL == 0:
-                    logger.debug("  processed %d total spectra..." % n_spectra_processed)
+                    logger.info("  processed %d total spectra in %.1f seconds..." %
+                                 (n_spectra_processed, time.time() - thisgroup_start_time))
 
                 # update the activation type histogram
                 if spectrum.activation_type:
