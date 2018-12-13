@@ -424,6 +424,9 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
         # check each reporter ion type, determine which are significantly elevated
         significant_reporter_types = set()
         reportertype_tstatistic_map = {}
+
+        tmt6_reporter_zscores = None
+
         for reporter_type in self.reportertype_bin_sum_proportion_map:
             if reporter_type == 'control':
                 continue
@@ -442,6 +445,8 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
                                                                      bin_sum / control_bin_mean, zscore))
                 ion_zscores.append(zscore)
             logger.debug("%s, ion zscores: %s" % (reporter_type, "\t".join([str(x) for x in ion_zscores])))
+            if reporter_type == 'TMT_6plex':
+                tmt6_reporter_zscores = ion_zscores
             logger.debug("%s bin mean: %.02f" % (reporter_type, reporter_bin_mean))
             # calculate t-statistic of the reporter bin intensity sums vs. the control bin intensity sums
             t_statistic = ttest_ind(reporter_bin_sums, control_bin_sums, equal_var=False)[0]
@@ -481,6 +486,20 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             itraq4_is_present = False
 
         # handle TMT
+
+        # 20181207
+        # special handling for TMT 6 vs. 2: if at least one 6plex ion is present,
+        # say we've got 6plex
+        tmt6_ions_present = []
+        if "TMT_2plex" in significant_reporter_types and "TMT_6plex" not in significant_reporter_types:
+            for i in xrange(len(tmt6_reporter_zscores)):
+                if tmt6_reporter_zscores[i] > TMT_REPORTER_ION_ZSCORE_CUTOFF:
+                    tmt6_ions_present.append(TMT_6PLEXONLY_REPORTERION_MZS[i])
+            if len(tmt6_ions_present) >= 1:
+                # declaring TMT6 present
+                logger.debug("TMT 6plex ions present: {}. m/z values: {}".format(len(tmt6_ions_present), tmt6_ions_present))
+                significant_reporter_types.add("TMT_6plex")
+
         
         # first check for TMT10, if checking is justified
         n_tmt10_peaks_detected = 0
@@ -492,7 +511,7 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             if tmt10_is_present:
                 logger.info("TMT10 is present, {} TMT10 peaks detected.".format(n_tmt10_peaks_detected))
                 # declare TMT6 and TMT2 to be absent
-                significant_reporter_types.remove("TMT_6plex")
+                #significant_reporter_types.remove("TMT_6plex")
                 significant_reporter_types.add("TMT_10plex")
             else:
                 logger.info("TMT10 is not present, {} TMT10 peaks detected.".format(n_tmt10_peaks_detected))
@@ -503,6 +522,12 @@ class ReporterIonProportionCalculator(RunAttributeDetector):
             result.search_modifications.append(util.Modification(util.MOD_TYPE_KEY_NTERM, SEARCH_MOD_MASS_TMT_6PLEX, True))
             if "TMT_2plex" not in significant_reporter_types:
                 logger.warn("    No TMT 2-plex reporters detected, only 6-plex")
+            # 20181207
+            # special warning for TMT 6 vs. 2
+            if len(tmt6_ions_present) < len(TMT_6PLEXONLY_REPORTERION_MZS):
+                print("    TMT 6-plex detected, but not all ions present. Ions present:")
+                for mz in tmt6_ions_present:
+                    print("        {:.4f}".format(mz))
             tmt2_is_present = False
             tmt6_is_present = True
             tmt10_is_present = False
