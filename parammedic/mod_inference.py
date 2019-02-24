@@ -339,11 +339,18 @@ class TMT6vs10Detector(RunAttributeDetector):
                 minmass_peak10 = peak10_mz_thisnominalmass - TMT610_PEAK_WIDTH_FOR_DETECT / 2
                 maxmass_peak10 = peak10_mz_thisnominalmass + TMT610_PEAK_WIDTH_FOR_DETECT / 2
                 #charts.hist(mzs_this_nominalmass, bins=100, title='{}'.format(nominalmass)).show()
-    
-                n_peaks_near_peak6 = bisect.bisect_left(mzs_this_nominalmass, maxmass_peak6) - bisect.bisect_left(
-                    mzs_this_nominalmass, minmass_peak6) + 1
-                n_peaks_near_peak10 = bisect.bisect_left(mzs_this_nominalmass, maxmass_peak10) - bisect.bisect_left(
-                    mzs_this_nominalmass, minmass_peak10) + 1
+
+                # count the peaks near the TMT6 and TMT10 peaks.
+                # I used to do this with bisect.bisect(), but that was misguided,
+                # because mzs_this_nominalmass is not sorted.
+                n_peaks_near_peak6 = 0
+                n_peaks_near_peak10 = 0
+                for mz in mzs_this_nominalmass:
+                    if minmass_peak6 <= mz <= maxmass_peak6:
+                        n_peaks_near_peak6 += 1
+                    elif minmass_peak10 <= mz <= maxmass_peak10:
+                        n_peaks_near_peak10 += 1
+
                 proportion_near_peak6 = float(n_peaks_near_peak6) / n_peaks_this_nominalmass
                 proportion_near_peak10 = float(n_peaks_near_peak10) / n_peaks_this_nominalmass
                 logger.debug("Near 6: {}. Near 10: {}".format(proportion_near_peak6, proportion_near_peak10))
